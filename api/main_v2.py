@@ -4,7 +4,7 @@ SuperCompare API — v2 with Mendoza Integration
 Real-time multi-store price comparison for Argentine supermarkets.
 
 Run:
-    uvicorn api.main:app --reload --port 8000
+    uvicorn api.main_v2:app --reload --port 8000
 
 Endpoints:
     GET  /                          → Health check
@@ -13,6 +13,7 @@ Endpoints:
     GET  /api/compare/leche+entera  → Compare across stores
     GET  /api/stores                → List available stores
     GET  /api/stats                 → System stats
+    POST /api/cart/build            → Build carts for selected items
 
 Auth (from auth module):
     POST /auth/register
@@ -104,20 +105,20 @@ app.include_router(search_router)
 # Auth (import conditionally — may not be set up yet)
 try:
     from auth.routes import router as auth_router
-    # Auth routes already have prefix="/auth" in their router definition
     app.include_router(auth_router, tags=["auth"])
     logger.info("Auth router loaded")
 except ImportError:
     logger.warning("Auth module not found — running without auth")
 
-# Cart
+# Cart builder
 try:
     from api.cart import router as cart_router
     app.include_router(cart_router, tags=["cart"])
     logger.info("Cart router loaded")
 except ImportError as e:
     logger.warning(f"Cart module not found — {e}")
-    
+
+
 # ============================================
 # Health / Root
 # ============================================
@@ -138,6 +139,7 @@ async def root():
             "compare": "/api/compare/leche+entera",
             "suggestions": "/api/search/suggestions?q=lec",
             "stores": "/api/stores",
+            "cart": "/api/cart/build",
             "docs": "/docs",
         },
     }

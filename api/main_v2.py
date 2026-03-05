@@ -110,7 +110,14 @@ try:
 except ImportError:
     logger.warning("Auth module not found — running without auth")
 
-
+# Cart
+try:
+    from api.cart import router as cart_router
+    app.include_router(cart_router, tags=["cart"])
+    logger.info("Cart router loaded")
+except ImportError as e:
+    logger.warning(f"Cart module not found — {e}")
+    
 # ============================================
 # Health / Root
 # ============================================

@@ -1,15 +1,14 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 
-// ─── FONTS ───────────────────────────────────────────────────────────────────
-const FONT_LINK = "https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=DM+Sans:wght@400;500;600&display=swap";
+// ─── FONTS ────────────────────────────────────────────────────────────────────
+const FONT_LINK =
+  "https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=DM+Sans:wght@400;500;600&display=swap";
 
 // ─── API CONFIG ───────────────────────────────────────────────────────────────
-const API_BASE = "http://localhost:8000";  // cambiar a dominio en prod
+const API_BASE = "http://localhost:8000";
 
-// Token management
 const getToken = () => localStorage.getItem("sc_token");
 const setToken = (t) => localStorage.setItem("sc_token", t);
-const clearToken = () => localStorage.removeItem("sc_token");
 
 async function apiCall(path, options = {}) {
   const token = getToken();
@@ -28,99 +27,234 @@ async function apiCall(path, options = {}) {
   return res.json();
 }
 
-// ─── API HELPERS ──────────────────────────────────────────────────────────────
+// ─── STORES CONFIG ────────────────────────────────────────────────────────────
+// frontKey (UI) → backKey (API)
+const STORES = {
+  vea:  { name: "Vea",        color: "#E31837", bg: "#FFF0F2", logo: "🔴", url: "https://www.vea.com.ar",         backKey: "vea"        },
+  mas:  { name: "MasOnline",  color: "#FF6B00", bg: "#FFF4EE", logo: "🟠", url: "https://www.masonline.com.ar",   backKey: "masonline"  },
+  coto: { name: "Coto",       color: "#007DC5", bg: "#EEF6FF", logo: "🔵", url: "https://www.cotodigital.com.ar", backKey: "coto"       },
+  modo: { name: "ModoMarket", color: "#6B3FA0", bg: "#F5EEFF", logo: "🟣", url: "https://www.modomarket.com",     backKey: "modomarket" },
+};
 
-// Busca un término en los súpers, retorna estructura agrupada por frontKey
+// backKey → frontKey (para mapear la respuesta de /api/cart/build)
+const BACK_TO_FRONT = Object.fromEntries(
+  Object.entries(STORES).map(([fk, s]) => [s.backKey, fk])
+);
+
+// ─── SEARCH ───────────────────────────────────────────────────────────────────
+// Busca cada súper por separado en paralelo → cobertura garantizada
 async function searchProducts(query, storeKeys) {
-  const backKeys = storeKeys.map(k => STORES[k].backKey).join(",");
-  const data = await apiCall(`/api/search?q=${encodeURIComponent(query)}&stores=${backKeys}&limit=20&sort=price`);
-
-  // El back devuelve results como ARRAY PLANO con campo "store"
-  // Lo convertimos a { frontKey: [products] }
   const grouped = {};
-  storeKeys.forEach(k => grouped[k] = []);
+  storeKeys.forEach((k) => (grouped[k] = []));
+  const allItems = [];
 
-  const items = Array.isArray(data.results) ? data.results : 
-                Array.isArray(data) ? data : [];
+  await Promise.allSettled(
+    storeKeys.map(async (frontKey) => {
+      const backKey = STORES[frontKey].backKey;
+      try {
+        const data = await apiCall(
+          `/api/search?q=${encodeURIComponent(query)}&stores=${backKey}&limit=20&sort=price`
+        );
+        const items = Array.isArray(data.results)
+          ? data.results
+          : Array.isArray(data)
+          ? data
+          : [];
+        grouped[frontKey] = items;
+        allItems.push(...items);
+      } catch {
+        // si un súper falla, el resto sigue
+      }
+    })
+  );
 
-  items.forEach(item => {
-    const backKey = item.store; // "vea", "masonline", "coto", "modomarket"
-    const frontKey = BACK_TO_FRONT[backKey];
-    if (frontKey && grouped[frontKey]) {
-      grouped[frontKey].push(item);
-    }
-  });
-
-  return grouped;
+  return { grouped, allItems };
 }
 
-// Agrupa resultados del API en estructura marca×súper para la UI
-// Normaliza marca para agrupar: "LA SERENISIMA" / "La Serenísima" → misma key
+// ─── CART BUILD ───────────────────────────────────────────────────────────────
+/**
+ * Llama a POST /api/cart/build con los items del carrito.
+ * Cada item necesita: store (backKey), external_id, quantity, name.
+ * Retorna la respuesta del back o null si falla.
+ */
+async function buildCarts(cartItems) {
+  const items = cartItems
+    .map((ci) => {
+      const brand = ci.product.brands[ci.brandIdx];
+      const extId = brand.externalIds?.[ci.store] || "";
+      if (!extId) return null;
+      return {
+        store: STORES[ci.store].backKey,
+        external_id: extId,
+        quantity: 1,
+        name: `${ci.product.name} ${brand.brand}`,
+      };
+    })
+    .filter(Boolean);
+
+  if (items.length === 0) return null;
+
+  try {
+    return await apiCall("/api/cart/build", {
+      method: "POST",
+      body: JSON.stringify({ items }),
+    });
+  } catch (e) {
+    console.warn("[cart] build failed:", e.message);
+    return null;
+  }
+}
+
+// ─── SUBCATEGORY NORMALIZATION ────────────────────────────────────────────────
+const SUBCAT_GROUPS = [
+  { label: "Fideos largos",    matches: ["fideos largos","pastas largas","spaghetti","espagueti","tallarines"] },
+  { label: "Fideos cortos",    matches: ["fideos cortos","pastas cortas","mostacholes","penne","rigatoni","tirabuzón"] },
+  { label: "Fideos para sopa", matches: ["fideos para sopa","sopa","cabello de angel","letras","estrellitas","coditos"] },
+  { label: "Fideos al huevo",  matches: ["fideos al huevo","pastas al huevo","fideo al huevo"] },
+  { label: "Leche entera",       matches: ["leche entera","leches enteras"] },
+  { label: "Leche descremada",   matches: ["leche descremada","leche parcialmente descremada","leche liviana","leches descremadas"] },
+  { label: "Leche sin lactosa",  matches: ["leche sin lactosa","leche deslactosada","leche zero lactosa"] },
+  { label: "Leche saborizada",   matches: ["leche saborizada","leches saborizadas","chocolatada"] },
+  { label: "Leche en polvo",     matches: ["leche en polvo","leches en polvo"] },
+  { label: "Jabón de tocador",   matches: ["jabón de tocador","jabon de tocador","jabones de tocador"] },
+  { label: "Jabón en barra",     matches: ["jabón en barra","jabon en barra","jabón blanco","jabon blanco"] },
+  { label: "Jabón líquido",      matches: ["jabón líquido","jabon liquido","jabón en gel"] },
+  { label: "Jabón de ropa",      matches: ["jabón de ropa","jabon de ropa","ropa"] },
+  { label: "Arroz largo fino",   matches: ["arroz largo fino","arroz largo","arroz doble carolina"] },
+  { label: "Arroz integral",     matches: ["arroz integral"] },
+  { label: "Arroz parboil",      matches: ["arroz parboil","arroz parbolizado"] },
+  { label: "Aceite de girasol",  matches: ["aceite de girasol","girasol"] },
+  { label: "Aceite de oliva",    matches: ["aceite de oliva","oliva"] },
+  { label: "Aceite de maíz",     matches: ["aceite de maíz","aceite de maiz","maíz","maiz"] },
+  { label: "Queso cremoso",      matches: ["queso cremoso"] },
+  { label: "Queso en barra",     matches: ["queso en barra","quesos en barra"] },
+  { label: "Queso rallado",      matches: ["queso rallado","quesos rallados"] },
+  { label: "Queso untable",      matches: ["queso untable","quesos untables"] },
+  { label: "Papel higiénico",    matches: ["papel higiénico","papel higienico"] },
+  { label: "Papel de cocina",    matches: ["papel de cocina","rollo de cocina"] },
+  { label: "Yerba con palo",     matches: ["yerba con palo","yerbas con palo"] },
+  { label: "Yerba sin palo",     matches: ["yerba sin palo","yerbas sin palo"] },
+  { label: "Yerba compuesta",    matches: ["yerba compuesta","yerbas compuestas"] },
+];
+
+function normalizeSubcat(raw) {
+  const lower = raw.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const group = SUBCAT_GROUPS.find((g) =>
+    g.matches.some((m) => lower.includes(m) || m.includes(lower))
+  );
+  return group ? group.label : raw;
+}
+
+function extractSubcategories(allItems, searchTerm) {
+  const lq = searchTerm.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const counts = {};
+  allItems.forEach((item) => {
+    if (!item.category) return;
+    const name = (item.name || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    if (!name.includes(lq) && !lq.split(" ").some((w) => w.length > 3 && name.includes(w))) return;
+    const parts = item.category.split(">").map((s) => s.trim());
+    const rawSubcat = parts[parts.length - 1];
+    if (!rawSubcat) return;
+    const normalized = normalizeSubcat(rawSubcat);
+    counts[normalized] = (counts[normalized] || 0) + 1;
+  });
+  return Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name]) => name);
+}
+
+// ─── PRODUCT BUILDER ──────────────────────────────────────────────────────────
 function normalizeBrand(brand) {
   return (brand || "sin marca")
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase().trim().replace(/\s+/g, " ");
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ");
 }
 
 function titleCase(str) {
   const lower = ["de", "del", "la", "las", "los", "el", "y", "con", "sin"];
-  return str.split(" ").map((w, i) =>
-    i === 0 || !lower.includes(w.toLowerCase())
-      ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
-      : w.toLowerCase()
-  ).join(" ");
+  return str
+    .split(" ")
+    .map((w, i) =>
+      i === 0 || !lower.includes(w.toLowerCase())
+        ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+        : w.toLowerCase()
+    )
+    .join(" ");
 }
 
-function buildProductFromResults(searchTerm, apiResults, storeKeys, id) {
-  // key = normalized brand, value = { displayName, unit, prices, urls }
+/**
+ * Construye la estructura marca×súper para la UI.
+ * IMPORTANTE: guarda externalIds[frontKey] = external_id del producto
+ * para poder pasarlo a /api/cart/build más tarde.
+ */
+function buildProductFromResults(searchTerm, apiResults, storeKeys, id, subcatFilter = null) {
   const brandMap = {};
   const lqRaw = searchTerm.toLowerCase();
   const lq = lqRaw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-  storeKeys.forEach(frontKey => {
+  storeKeys.forEach((frontKey) => {
     const products = apiResults[frontKey] || [];
 
-    const relevant = products.filter(p => {
-      const name = (p.name || "").toLowerCase()
-        .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      return name.includes(lq) || lq.split(" ").some(w => w.length > 3 && name.includes(w));
+    const relevant = products.filter((p) => {
+      const name = (p.name || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const matchesSearch =
+        name.includes(lq) || lq.split(" ").some((w) => w.length > 3 && name.includes(w));
+      if (!matchesSearch) return false;
+      if (subcatFilter) {
+        const parts = (p.category || "").split(">").map((s) => s.trim());
+        return normalizeSubcat(parts[parts.length - 1]) === subcatFilter;
+      }
+      return true;
     });
 
-    relevant.slice(0, 6).forEach(p => {
-      const rawBrand   = p.brand || "Sin marca";
-      const normKey    = normalizeBrand(rawBrand);
+    relevant.slice(0, 6).forEach((p) => {
+      const rawBrand    = p.brand || "Sin marca";
+      const normKey     = normalizeBrand(rawBrand);
       const displayName = titleCase(rawBrand);
-      // Unidad separada de cantidad: "1lt", "500g", etc.
-      const qty   = p.quantity ? parseFloat(p.quantity) : 1;
-      const unit  = (p.unit || "u").toLowerCase();
-      const unitLabel = qty >= 1000
-        ? `${(qty/1000).toFixed(qty % 1000 === 0 ? 0 : 1)}${unit === "g" ? "kg" : unit === "ml" ? "l" : unit}`
-        : `${qty % 1 === 0 ? qty : qty}${unit}`;
-
-      const price = p.effective_price || p.promo_price || p.price || 0;
-      const url   = p.product_url || STORES[frontKey].url;
+      const qty         = p.quantity ? parseFloat(p.quantity) : 1;
+      const unit        = (p.unit || "u").toLowerCase();
+      const unitLabel   =
+        qty >= 1000
+          ? `${(qty / 1000).toFixed(qty % 1000 === 0 ? 0 : 1)}${unit === "g" ? "kg" : unit === "ml" ? "l" : unit}`
+          : `${qty % 1 === 0 ? qty : qty}${unit}`;
+      const price   = p.effective_price || p.promo_price || p.price || 0;
+      const url     = p.product_url || STORES[frontKey].url;
+      const extId   = String(p.external_id || p.id || "");   // ← SKU del back
 
       if (!brandMap[normKey]) {
-        brandMap[normKey] = { displayName, unit: unitLabel, prices: {}, urls: {} };
+        brandMap[normKey] = {
+          displayName,
+          unit: unitLabel,
+          prices: {},
+          urls: {},
+          externalIds: {},   // ← nuevo
+        };
       }
+      // Quedarse con el precio más bajo si hay duplicados de misma marca en el mismo súper
       if (!brandMap[normKey].prices[frontKey] || price < brandMap[normKey].prices[frontKey]) {
-        brandMap[normKey].prices[frontKey] = price;
-        brandMap[normKey].urls[frontKey]   = url;
+        brandMap[normKey].prices[frontKey]      = price;
+        brandMap[normKey].urls[frontKey]        = url;
+        brandMap[normKey].externalIds[frontKey] = extId;   // ← guardar
       }
     });
   });
 
-  const brands = Object.values(brandMap).map(data => ({
-    brand:  data.displayName,
-    unit:   data.unit,
-    prices: Object.fromEntries(storeKeys.map(s => [s, data.prices[s] ?? null])),
-    urls:   data.urls,
+  const brands = Object.values(brandMap).map((data) => ({
+    brand:       data.displayName,
+    unit:        data.unit,
+    prices:      Object.fromEntries(storeKeys.map((s) => [s, data.prices[s] ?? null])),
+    urls:        data.urls,
+    externalIds: data.externalIds,   // ← en cada objeto de marca
   }));
 
   // Marcas presentes en más súpers primero
-  brands.sort((a, b) =>
-    Object.values(b.prices).filter(Boolean).length -
-    Object.values(a.prices).filter(Boolean).length
+  brands.sort(
+    (a, b) =>
+      Object.values(b.prices).filter(Boolean).length -
+      Object.values(a.prices).filter(Boolean).length
   );
 
   if (brands.length === 0) return null;
@@ -139,8 +273,7 @@ function buildProductFromResults(searchTerm, apiResults, storeKeys, id) {
   return { id, name, emoji, brands, keyword: [lqRaw] };
 }
 
-
-// Auth
+// ─── AUTH ─────────────────────────────────────────────────────────────────────
 async function register(name, email, password, zone, supermarkets) {
   const data = await apiCall("/auth/register", {
     method: "POST",
@@ -159,901 +292,313 @@ async function login(email, password) {
   return data;
 }
 
-// Zonas (con fallback a lista hardcodeada si el back no responde)
-async function fetchZones() {
-  try {
-    return await apiCall("/auth/zones");
-  } catch {
-    return null;
-  }
-}
-
-// ─── STORES CONFIG ────────────────────────────────────────────────────────────
-const STORES = {
-  vea:      { name: "Vea",         color: "#E31837", bg: "#FFF0F2", logo: "🔴", url: "https://www.vea.com.ar",           backKey: "vea"        },
-  mas:      { name: "MasOnline",   color: "#FF6B00", bg: "#FFF4EE", logo: "🟠", url: "https://www.masonline.com.ar",     backKey: "masonline"  },
-  coto:     { name: "Coto",        color: "#007DC5", bg: "#EEF6FF", logo: "🔵", url: "https://www.cotodigital.com.ar",   backKey: "coto"       },
-  modo:     { name: "ModoMarket",  color: "#6B3FA0", bg: "#F5EEFF", logo: "🟣", url: "https://www.modomarket.com",       backKey: "modomarket" },
-};
-
-// Mapeo inverso: backKey → frontKey
-const BACK_TO_FRONT = Object.fromEntries(
-  Object.entries(STORES).map(([fk, s]) => [s.backKey, fk])
-);
-
-// ─── FALLBACK MOCK (solo si el back no responde) ──────────────────────────────
+// ─── MOCK FALLBACK ────────────────────────────────────────────────────────────
+// Se usa solo si el back no responde. externalIds vacíos → sin pre-carga de carrito.
 const MOCK_CATALOG = [
   { id: 1, name: "Leche entera", emoji: "🥛", keyword: ["leche"],
     brands: [
-      { brand: "La Serenísima", unit: "1L",   prices: { vea: 1290, mas: 1250, coto: 1310, modo: 1275 } },
-      { brand: "Sancor",        unit: "1L",   prices: { vea: 1180, mas: 1150, coto: 1200, modo: null  } },
-      { brand: "Atalact",       unit: "1L",   prices: { vea: null, mas:  980, coto: 1020, modo:  960  } },
+      { brand: "La Serenísima", unit: "1lt", prices: { vea: 1290, mas: 1250, coto: 1310, modo: 1275 }, urls: {}, externalIds: {} },
+      { brand: "Sancor",        unit: "1lt", prices: { vea: 1180, mas: 1150, coto: 1200, modo: null  }, urls: {}, externalIds: {} },
+      { brand: "Atalact",       unit: "1lt", prices: { vea: null, mas:  980, coto: 1020, modo:  960  }, urls: {}, externalIds: {} },
     ]},
   { id: 2, name: "Aceite girasol", emoji: "🫙", keyword: ["aceite"],
     brands: [
-      { brand: "Cocinero",  unit: "1.5L", prices: { vea: 3890, mas: 3750, coto: 3920, modo: 3800 } },
-      { brand: "Natura",    unit: "1.5L", prices: { vea: 3650, mas: 3580, coto: null,  modo: 3620 } },
+      { brand: "Cocinero", unit: "1.5lt", prices: { vea: 3890, mas: 3750, coto: 3920, modo: 3800 }, urls: {}, externalIds: {} },
+      { brand: "Natura",   unit: "1.5lt", prices: { vea: 3650, mas: 3580, coto: null,  modo: 3620 }, urls: {}, externalIds: {} },
     ]},
   { id: 3, name: "Arroz", emoji: "🍚", keyword: ["arroz"],
     brands: [
-      { brand: "Gallo",    unit: "1kg", prices: { vea: 1690, mas: 1590, coto: 1750, modo: 1620 } },
-      { brand: "Lucchetti",unit: "1kg", prices: { vea: 1520, mas: 1480, coto: 1580, modo: null  } },
+      { brand: "Gallo",     unit: "1kg", prices: { vea: 1690, mas: 1590, coto: 1750, modo: 1620 }, urls: {}, externalIds: {} },
+      { brand: "Lucchetti", unit: "1kg", prices: { vea: 1520, mas: 1480, coto: 1580, modo: null  }, urls: {}, externalIds: {} },
     ]},
   { id: 4, name: "Fideos", emoji: "🍝", keyword: ["fideo", "pasta"],
     brands: [
-      { brand: "Matarazzo", unit: "500g", prices: { vea:  980, mas:  890, coto: 1020, modo:  950 } },
-      { brand: "Lucchetti", unit: "500g", prices: { vea:  920, mas:  870, coto:  960, modo:  880 } },
+      { brand: "Matarazzo", unit: "500g", prices: { vea: 980, mas: 890, coto: 1020, modo: 950 }, urls: {}, externalIds: {} },
+      { brand: "Lucchetti", unit: "500g", prices: { vea: 920, mas: 870, coto:  960, modo: 880 }, urls: {}, externalIds: {} },
     ]},
   { id: 5, name: "Yerba mate", emoji: "🧉", keyword: ["yerba"],
     brands: [
-      { brand: "Taragüí",   unit: "1kg", prices: { vea: 4250, mas: 4100, coto: 4380, modo: 4200 } },
-      { brand: "Amanda",    unit: "1kg", prices: { vea: 3980, mas: 3850, coto: 4100, modo: 3900 } },
+      { brand: "Taragüí", unit: "1kg", prices: { vea: 4250, mas: 4100, coto: 4380, modo: 4200 }, urls: {}, externalIds: {} },
+      { brand: "Amanda",  unit: "1kg", prices: { vea: 3980, mas: 3850, coto: 4100, modo: 3900 }, urls: {}, externalIds: {} },
     ]},
   { id: 6, name: "Harina", emoji: "🌾", keyword: ["harina"],
     brands: [
-      { brand: "Pureza",   unit: "1kg", prices: { vea:  890, mas:  850, coto:  910, modo:  870 } },
-      { brand: "Cañuelas", unit: "1kg", prices: { vea:  820, mas:  790, coto:  840, modo: null  } },
+      { brand: "Pureza",   unit: "1kg", prices: { vea: 890, mas: 850, coto: 910, modo: 870 }, urls: {}, externalIds: {} },
+      { brand: "Cañuelas", unit: "1kg", prices: { vea: 820, mas: 790, coto: 840, modo: null }, urls: {}, externalIds: {} },
     ]},
   { id: 7, name: "Azúcar", emoji: "🍬", keyword: ["azucar", "azúcar"],
     brands: [
-      { brand: "Ledesma",  unit: "1kg", prices: { vea: 1150, mas: 1080, coto: 1190, modo: 1120 } },
-      { brand: "Chango",   unit: "1kg", prices: { vea: 1050, mas:  990, coto: 1100, modo: 1020 } },
+      { brand: "Ledesma", unit: "1kg", prices: { vea: 1150, mas: 1080, coto: 1190, modo: 1120 }, urls: {}, externalIds: {} },
+      { brand: "Chango",  unit: "1kg", prices: { vea: 1050, mas:  990, coto: 1100, modo: 1020 }, urls: {}, externalIds: {} },
     ]},
   { id: 8, name: "Huevos", emoji: "🥚", keyword: ["huevo", "huevos"],
     brands: [
-      { brand: "Granja del Sol", unit: "x12", prices: { vea: 2890, mas: 2750, coto: 2950, modo: 2800 } },
-      { brand: "La Campagnola",  unit: "x12", prices: { vea: 2650, mas: 2580, coto: null,  modo: 2620 } },
+      { brand: "Granja del Sol", unit: "x12", prices: { vea: 2890, mas: 2750, coto: 2950, modo: 2800 }, urls: {}, externalIds: {} },
+      { brand: "La Campagnola",  unit: "x12", prices: { vea: 2650, mas: 2580, coto: null,  modo: 2620 }, urls: {}, externalIds: {} },
     ]},
   { id: 9, name: "Cerveza", emoji: "🍺", keyword: ["cerveza"],
     brands: [
-      { brand: "Quilmes",  unit: "1L",   prices: { vea: 2100, mas: 1980, coto: 2200, modo: 2050 } },
-      { brand: "Brahma",   unit: "1L",   prices: { vea: 1850, mas: 1790, coto: 1920, modo: 1830 } },
+      { brand: "Quilmes", unit: "1lt", prices: { vea: 2100, mas: 1980, coto: 2200, modo: 2050 }, urls: {}, externalIds: {} },
+      { brand: "Brahma",  unit: "1lt", prices: { vea: 1850, mas: 1790, coto: 1920, modo: 1830 }, urls: {}, externalIds: {} },
     ]},
   { id: 10, name: "Pan lactal", emoji: "🍞", keyword: ["pan", "lactal"],
     brands: [
-      { brand: "Bimbo", unit: "500g", prices: { vea: 1450, mas: 1380, coto: 1500, modo: 1420 } },
-      { brand: "Fargo", unit: "500g", prices: { vea: 1320, mas: 1280, coto: 1380, modo: null  } },
+      { brand: "Bimbo", unit: "500g", prices: { vea: 1450, mas: 1380, coto: 1500, modo: 1420 }, urls: {}, externalIds: {} },
+      { brand: "Fargo", unit: "500g", prices: { vea: 1320, mas: 1280, coto: 1380, modo: null  }, urls: {}, externalIds: {} },
     ]},
   { id: 11, name: "Queso cremoso", emoji: "🧀", keyword: ["queso"],
     brands: [
-      { brand: "La Serenísima", unit: "400g", prices: { vea: 3200, mas: 3050, coto: 3350, modo: 3100 } },
-      { brand: "Tregar",        unit: "400g", prices: { vea: 2750, mas: null,  coto: 2900, modo: 2800 } },
+      { brand: "La Serenísima", unit: "400g", prices: { vea: 3200, mas: 3050, coto: 3350, modo: 3100 }, urls: {}, externalIds: {} },
+      { brand: "Tregar",        unit: "400g", prices: { vea: 2750, mas: null,  coto: 2900, modo: 2800 }, urls: {}, externalIds: {} },
     ]},
   { id: 12, name: "Detergente", emoji: "🧴", keyword: ["detergente"],
     brands: [
-      { brand: "Magistral", unit: "750ml", prices: { vea: 1890, mas: 1750, coto: 1950, modo: 1810 } },
-      { brand: "Ala",       unit: "750ml", prices: { vea: 1650, mas: 1580, coto: 1720, modo: null  } },
+      { brand: "Magistral", unit: "750ml", prices: { vea: 1890, mas: 1750, coto: 1950, modo: 1810 }, urls: {}, externalIds: {} },
+      { brand: "Ala",       unit: "750ml", prices: { vea: 1650, mas: 1580, coto: 1720, modo: null  }, urls: {}, externalIds: {} },
     ]},
   { id: 13, name: "Papel higiénico", emoji: "🧻", keyword: ["papel", "higienico"],
     brands: [
-      { brand: "Higienol", unit: "x4", prices: { vea: 1650, mas: 1580, coto: 1700, modo: 1620 } },
-      { brand: "Elite",    unit: "x4", prices: { vea: 1450, mas: 1390, coto: 1500, modo: null  } },
+      { brand: "Higienol", unit: "x4", prices: { vea: 1650, mas: 1580, coto: 1700, modo: 1620 }, urls: {}, externalIds: {} },
+      { brand: "Elite",    unit: "x4", prices: { vea: 1450, mas: 1390, coto: 1500, modo: null  }, urls: {}, externalIds: {} },
     ]},
   { id: 14, name: "Tomate triturado", emoji: "🍅", keyword: ["tomate"],
     brands: [
-      { brand: "Arcor",         unit: "400g", prices: { vea:  780, mas:  720, coto:  800, modo:  750 } },
-      { brand: "La Campagnola", unit: "400g", prices: { vea:  720, mas:  680, coto:  740, modo: null  } },
+      { brand: "Arcor",         unit: "400g", prices: { vea: 780, mas: 720, coto: 800, modo: 750  }, urls: {}, externalIds: {} },
+      { brand: "La Campagnola", unit: "400g", prices: { vea: 720, mas: 680, coto: 740, modo: null }, urls: {}, externalIds: {} },
     ]},
   { id: 15, name: "Atún", emoji: "🐟", keyword: ["atun", "atún"],
     brands: [
-      { brand: "La Campagnola", unit: "170g", prices: { vea: 1100, mas: 1020, coto: 1150, modo: 1060 } },
-      { brand: "Alka",          unit: "170g", prices: { vea:  980, mas:  920, coto: 1010, modo: null  } },
+      { brand: "La Campagnola", unit: "170g", prices: { vea: 1100, mas: 1020, coto: 1150, modo: 1060 }, urls: {}, externalIds: {} },
+      { brand: "Alka",          unit: "170g", prices: { vea:  980, mas:  920, coto: 1010, modo: null  }, urls: {}, externalIds: {} },
     ]},
 ];
 
-
-const CATALOG = [
-  { id: 1, name: "Leche entera", emoji: "🥛", keyword: ["leche"],
-    brands: [
-      { brand: "La Serenísima", unit: "1L",   prices: { vea: 1290, mas: 1250, coto: 1310, modo: 1275 } },
-      { brand: "Sancor",        unit: "1L",   prices: { vea: 1180, mas: 1150, coto: 1200, modo: null  } },
-      { brand: "Atalact",       unit: "1L",   prices: { vea: null, mas:  980, coto: 1020, modo:  960  } },
-    ]},
-  { id: 2, name: "Aceite girasol", emoji: "🫙", keyword: ["aceite"],
-    brands: [
-      { brand: "Cocinero",  unit: "1.5L", prices: { vea: 3890, mas: 3750, coto: 3920, modo: 3800 } },
-      { brand: "Natura",    unit: "1.5L", prices: { vea: 3650, mas: 3580, coto: null,  modo: 3620 } },
-      { brand: "Ideal",     unit: "1L",   prices: { vea: 2490, mas: 2390, coto: 2550, modo: null  } },
-    ]},
-  { id: 3, name: "Arroz", emoji: "🍚", keyword: ["arroz"],
-    brands: [
-      { brand: "Gallo",    unit: "1kg", prices: { vea: 1690, mas: 1590, coto: 1750, modo: 1620 } },
-      { brand: "Lucchetti",unit: "1kg", prices: { vea: 1520, mas: 1480, coto: 1580, modo: null  } },
-      { brand: "Dos Anclas",unit:"1kg", prices: { vea: null, mas: 1350, coto: 1420, modo: 1380 } },
-    ]},
-  { id: 4, name: "Fideos", emoji: "🍝", keyword: ["fideo", "pasta", "spaghetti"],
-    brands: [
-      { brand: "Matarazzo", unit: "500g", prices: { vea:  980, mas:  890, coto: 1020, modo:  950 } },
-      { brand: "Lucchetti", unit: "500g", prices: { vea:  920, mas:  870, coto:  960, modo:  880 } },
-      { brand: "Don Felipe", unit:"500g", prices: { vea: null, mas:  780, coto:  820, modo:  800 } },
-    ]},
-  { id: 5, name: "Yerba mate", emoji: "🧉", keyword: ["yerba"],
-    brands: [
-      { brand: "Taragüí",   unit: "1kg", prices: { vea: 4250, mas: 4100, coto: 4380, modo: 4200 } },
-      { brand: "Amanda",    unit: "1kg", prices: { vea: 3980, mas: 3850, coto: 4100, modo: 3900 } },
-      { brand: "Rosamonte", unit: "1kg", prices: { vea: 3750, mas: null,  coto: 3900, modo: 3780 } },
-    ]},
-  { id: 6, name: "Harina", emoji: "🌾", keyword: ["harina"],
-    brands: [
-      { brand: "Pureza",   unit: "1kg", prices: { vea:  890, mas:  850, coto:  910, modo:  870 } },
-      { brand: "Cañuelas", unit: "1kg", prices: { vea:  820, mas:  790, coto:  840, modo: null  } },
-      { brand: "Morixe",   unit: "1kg", prices: { vea: null, mas:  760, coto:  800, modo:  780 } },
-    ]},
-  { id: 7, name: "Azúcar", emoji: "🍬", keyword: ["azucar", "azúcar"],
-    brands: [
-      { brand: "Ledesma",  unit: "1kg", prices: { vea: 1150, mas: 1080, coto: 1190, modo: 1120 } },
-      { brand: "Chango",   unit: "1kg", prices: { vea: 1050, mas:  990, coto: 1100, modo: 1020 } },
-    ]},
-  { id: 8, name: "Huevos", emoji: "🥚", keyword: ["huevo", "huevos"],
-    brands: [
-      { brand: "Granja del Sol", unit: "x12", prices: { vea: 2890, mas: 2750, coto: 2950, modo: 2800 } },
-      { brand: "La Campagnola",  unit: "x12", prices: { vea: 2650, mas: 2580, coto: null,  modo: 2620 } },
-      { brand: "Marca blanca",   unit: "x12", prices: { vea: null, mas: 2400, coto: 2490, modo: null  } },
-    ]},
-  { id: 9, name: "Cerveza", emoji: "🍺", keyword: ["cerveza"],
-    brands: [
-      { brand: "Quilmes",  unit: "1L",   prices: { vea: 2100, mas: 1980, coto: 2200, modo: 2050 } },
-      { brand: "Schneider",unit: "1L",   prices: { vea: 1950, mas: 1870, coto: 2020, modo: null  } },
-      { brand: "Brahma",   unit: "1L",   prices: { vea: 1850, mas: 1790, coto: 1920, modo: 1830 } },
-    ]},
-  { id: 10, name: "Pan lactal", emoji: "🍞", keyword: ["pan", "lactal"],
-    brands: [
-      { brand: "Bimbo",     unit: "500g", prices: { vea: 1450, mas: 1380, coto: 1500, modo: 1420 } },
-      { brand: "Fargo",     unit: "500g", prices: { vea: 1320, mas: 1280, coto: 1380, modo: null  } },
-      { brand: "Silueta",   unit: "400g", prices: { vea: null, mas: 1150, coto: 1200, modo: 1160 } },
-    ]},
-  { id: 11, name: "Queso cremoso", emoji: "🧀", keyword: ["queso"],
-    brands: [
-      { brand: "La Serenísima", unit: "400g", prices: { vea: 3200, mas: 3050, coto: 3350, modo: 3100 } },
-      { brand: "Sancor",        unit: "400g", prices: { vea: 2950, mas: 2880, coto: 3100, modo: null  } },
-      { brand: "Tregar",        unit: "400g", prices: { vea: 2750, mas: null,  coto: 2900, modo: 2800 } },
-    ]},
-  { id: 12, name: "Detergente", emoji: "🧴", keyword: ["detergente"],
-    brands: [
-      { brand: "Magistral", unit: "750ml", prices: { vea: 1890, mas: 1750, coto: 1950, modo: 1810 } },
-      { brand: "Ala",       unit: "750ml", prices: { vea: 1650, mas: 1580, coto: 1720, modo: null  } },
-      { brand: "Prima",     unit: "500ml", prices: { vea: null, mas: 1320, coto: 1390, modo: 1340 } },
-    ]},
-  { id: 13, name: "Papel higiénico", emoji: "🧻", keyword: ["papel", "higienico", "higiénico"],
-    brands: [
-      { brand: "Higienol",  unit: "x4", prices: { vea: 1650, mas: 1580, coto: 1700, modo: 1620 } },
-      { brand: "Elite",     unit: "x4", prices: { vea: 1450, mas: 1390, coto: 1500, modo: null  } },
-      { brand: "Familia",   unit: "x4", prices: { vea: null, mas: 1280, coto: 1340, modo: 1300 } },
-    ]},
-  { id: 14, name: "Tomate triturado", emoji: "🍅", keyword: ["tomate"],
-    brands: [
-      { brand: "Arcor",         unit: "400g", prices: { vea:  780, mas:  720, coto:  800, modo:  750 } },
-      { brand: "La Campagnola", unit: "400g", prices: { vea:  720, mas:  680, coto:  740, modo: null  } },
-      { brand: "Cica",          unit: "400g", prices: { vea: null, mas:  650, coto:  680, modo:  660 } },
-    ]},
-  { id: 15, name: "Atún", emoji: "🐟", keyword: ["atun", "atún"],
-    brands: [
-      { brand: "La Campagnola", unit: "170g", prices: { vea: 1100, mas: 1020, coto: 1150, modo: 1060 } },
-      { brand: "Alka",          unit: "170g", prices: { vea:  980, mas:  920, coto: 1010, modo: null  } },
-      { brand: "Cormoran",      unit: "170g", prices: { vea: null, mas:  870, coto:  910, modo:  890 } },
-    ]},
-];
-
-const TRENDING = ["Leche", "Arroz", "Fideos", "Huevos", "Yerba", "Pan", "Queso", "Aceite"];
-
-const PROVINCES = [
-  "Buenos Aires", "CABA", "Catamarca", "Chaco", "Chubut", "Córdoba",
-  "Corrientes", "Entre Ríos", "Formosa", "Jujuy", "La Pampa", "La Rioja",
-  "Mendoza", "Misiones", "Neuquén", "Río Negro", "Salta", "San Juan",
-  "San Luis", "Santa Cruz", "Santa Fe", "Santiago del Estero",
-  "Tierra del Fuego", "Tucumán",
-];
-
-// ─── HELPERS ──────────────────────────────────────────────────────────────────
-function parseList(text) {
-  return text
-    .split("\n")
-    .map(l => l.trim().replace(/^[-•*\d.]\s*/, ""))
-    .filter(Boolean);
-}
-
-// Fallback: match contra MOCK_CATALOG si el back no responde
 function matchProductsMock(lines) {
-  const matched = [];
-  const unmatched = [];
-  lines.forEach(line => {
+  const matched = [], unmatched = [];
+  lines.forEach((line) => {
     const lline = line.toLowerCase();
-    const found = MOCK_CATALOG.find(p =>
-      p.keyword.some(k => lline.includes(k)) || lline.includes(p.name.toLowerCase())
+    const found = MOCK_CATALOG.find(
+      (p) => p.keyword.some((k) => lline.includes(k)) || lline.includes(p.name.toLowerCase())
     );
-    if (found && !matched.find(m => m.id === found.id)) matched.push(found);
+    if (found && !matched.find((m) => m.id === found.id)) matched.push(found);
     else if (!found) unmatched.push(line);
   });
   return { matched, unmatched };
 }
 
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+function parseList(text) {
+  return text
+    .split("\n")
+    .map((l) => l.trim().replace(/^[-•*\d.]\s*/, ""))
+    .filter(Boolean);
+}
+
 function fmt(n) {
-  return "$" + n.toLocaleString("es-AR");
+  return "$" + Math.round(n).toLocaleString("es-AR");
 }
 
-// Get the global minimum price across all brands and stores for a product
-function globalMinPrice(product) {
-  let min = Infinity;
-  product.brands.forEach(b => Object.values(b.prices).forEach(p => { if (p && p < min) min = p; }));
-  return min;
-}
-
-// Get the global maximum price across all brands and stores
 function globalMaxPrice(product) {
   let max = -Infinity;
-  product.brands.forEach(b => Object.values(b.prices).forEach(p => { if (p && p > max) max = p; }));
+  product.brands.forEach((b) =>
+    Object.values(b.prices).forEach((p) => { if (p && p > max) max = p; })
+  );
   return max;
 }
 
-// cartItems: array of { product, brandIdx, store, price }
 function computeOptimization(cartItems) {
   const byStore = {};
-  Object.keys(STORES).forEach(s => byStore[s] = 0);
-
-  cartItems.forEach(item => {
+  Object.keys(STORES).forEach((s) => (byStore[s] = 0));
+  cartItems.forEach((item) => {
     byStore[item.store] = (byStore[item.store] || 0) + item.price;
   });
-
   const totalOptimized = cartItems.reduce((s, i) => s + i.price, 0);
-
-  // Worst case: most expensive brand+store combo per product
-  const totalWorst = cartItems.reduce((sum, item) => sum + globalMaxPrice(item.product), 0);
-  const savings = totalWorst - totalOptimized;
-
+  const totalWorst     = cartItems.reduce((sum, item) => sum + globalMaxPrice(item.product), 0);
+  const savings        = totalWorst - totalOptimized;
   const storeBreakdown = Object.entries(byStore)
     .filter(([, v]) => v > 0)
     .map(([store, total]) => ({
       store,
       total,
-      items: cartItems.filter(i => i.store === store),
+      items: cartItems.filter((i) => i.store === store),
     }));
-
   return { totalOptimized, totalWorst, savings, byStore, storeBreakdown };
 }
+
+const PROVINCES = [
+  "Buenos Aires","CABA","Catamarca","Chaco","Chubut","Córdoba",
+  "Corrientes","Entre Ríos","Formosa","Jujuy","La Pampa","La Rioja",
+  "Mendoza","Misiones","Neuquén","Río Negro","Salta","San Juan",
+  "San Luis","Santa Cruz","Santa Fe","Santiago del Estero",
+  "Tierra del Fuego","Tucumán",
+];
+
+const TRENDING = ["Leche","Arroz","Fideos","Huevos","Yerba","Pan","Queso","Aceite"];
 
 // ─── STYLES ───────────────────────────────────────────────────────────────────
 const css = `
   @import url('${FONT_LINK}');
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#F5F3EE;--surface:#FFF;
+    --primary:#1A3A2A;--accent:#4AE078;--accent2:#FF6240;
+    --text:#1A1A18;--text2:#6B6960;
+    --border:rgba(0,0,0,.09);
+    --shadow:0 2px 12px rgba(0,0,0,.07);
+    --shadow-lg:0 8px 40px rgba(0,0,0,.12);
+    --radius:16px;--radius-sm:10px;
+  }
+  body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text)}
+  .app{min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:0 16px 80px}
+  .topbar{width:100%;max-width:540px;display:flex;align-items:center;justify-content:space-between;padding:20px 0 8px;margin-bottom:8px}
+  .logo{font-family:'Sora',sans-serif;font-weight:800;font-size:22px;color:var(--primary);letter-spacing:-.5px}
+  .logo span{color:var(--accent2)}
+  .step-dots{display:flex;gap:5px}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--border);transition:all .3s}
+  .dot.active{background:var(--primary);width:18px;border-radius:3px}
+  .dot.done{background:var(--accent)}
+  .screen{width:100%;max-width:540px;animation:fadeUp .35s ease}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+  .screen-title{font-family:'Sora',sans-serif;font-size:28px;font-weight:800;line-height:1.15;color:var(--primary);margin-bottom:6px;letter-spacing:-.5px}
+  .screen-sub{font-size:15px;color:var(--text2);margin-bottom:28px;line-height:1.5}
+  .card{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px}
 
-  :root {
-    --bg: #F5F3EE;
-    --surface: #FFFFFF;
-    --primary: #1A3A2A;
-    --accent: #4AE078;
-    --accent2: #FF6240;
-    --text: #1A1A18;
-    --text2: #6B6960;
-    --border: rgba(0,0,0,0.09);
-    --shadow: 0 2px 12px rgba(0,0,0,0.07);
-    --shadow-lg: 0 8px 40px rgba(0,0,0,0.12);
-    --radius: 16px;
-    --radius-sm: 10px;
-  }
+  /* Zona */
+  .province-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;max-height:360px;overflow-y:auto;padding-right:4px}
+  .province-btn{font-family:'DM Sans',sans-serif;font-size:14px;font-weight:500;padding:12px 14px;border-radius:var(--radius-sm);border:1.5px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;text-align:left;transition:all .15s}
+  .province-btn:hover{border-color:var(--primary);background:#F0F8F3}
+  .province-btn.selected{border-color:var(--primary);background:var(--primary);color:white}
 
-  body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); }
+  /* Lista */
+  .list-textarea{font-family:'DM Sans',sans-serif;font-size:17px;line-height:1.8;width:100%;min-height:180px;padding:16px;border:1.5px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--text);resize:none;outline:none;transition:border-color .2s}
+  .list-textarea:focus{border-color:var(--primary)}
+  .list-textarea::placeholder{color:#BCBAB4}
+  .char-count{font-size:12px;color:var(--text2);text-align:right;margin-top:6px}
+  .trend-section{margin-top:24px}
+  .trend-title{font-family:'Sora',sans-serif;font-size:14px;font-weight:700;color:var(--text);margin-bottom:10px}
+  .trend-chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{font-family:'DM Sans',sans-serif;font-size:14px;font-weight:500;padding:8px 16px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;transition:all .15s;white-space:nowrap}
+  .chip:hover{border-color:var(--primary);background:#F0F8F3}
+  .chip.added{border-color:var(--accent);background:#EDFFF4;color:var(--primary)}
 
-  .app {
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 0 16px 80px;
-  }
+  /* Producto */
+  .product-card{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px;margin-bottom:12px;border:1.5px solid transparent;transition:border-color .2s}
+  .product-card.in-cart{border-color:var(--accent)}
+  .product-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .product-header-left{display:flex;align-items:center;gap:10px}
+  .product-emoji{font-size:26px}
+  .product-name{font-family:'Sora',sans-serif;font-size:15px;font-weight:700;color:var(--text)}
+  .brand-table{width:100%;border-collapse:separate;border-spacing:0;margin-bottom:12px;font-size:12px}
+  .brand-table th{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);padding:0 6px 8px;text-align:center}
+  .brand-table th.brand-col{text-align:left;padding-left:0}
+  .brand-table td{padding:3px}
+  .brand-table td.brand-label{font-size:12px;font-weight:500;color:var(--text);padding:3px 8px 3px 0;max-width:120px;vertical-align:middle}
+  .brand-name-text{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .brand-unit-badge{display:inline-block;font-size:9px;font-weight:600;color:var(--text2);background:#F0EEE8;border-radius:4px;padding:1px 5px;margin-top:2px}
+  .price-cell{text-align:center;padding:8px 4px;border-radius:8px;border:1.5px solid var(--border);cursor:pointer;transition:all .15s;position:relative;min-width:62px;white-space:nowrap}
+  .price-cell:hover:not(.unavailable){border-color:var(--text2);background:#F5F3EE}
+  .price-cell.cheapest-all{border-color:#4AE078;background:#EDFFF4}
+  .price-cell.selected-cell{border-color:var(--primary);background:var(--primary)}
+  .price-cell.selected-cell .cell-price{color:white}
+  .price-cell.unavailable{background:#F8F8F6;cursor:default}
+  .cell-price{font-size:13px;font-weight:700;color:var(--text)}
+  .cell-price.muted{font-size:11px;color:#CCC;font-weight:400}
+  .cheapest-badge{position:absolute;top:-8px;left:50%;transform:translateX(-50%);font-size:9px;font-weight:700;background:#4AE078;color:#1A3A2A;padding:2px 6px;border-radius:10px;white-space:nowrap;pointer-events:none}
+  .selected-summary{display:flex;align-items:center;justify-content:space-between;background:#F0F8F3;border:1.5px solid var(--accent);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:10px;font-size:13px}
+  .selected-summary strong{font-weight:700;color:var(--primary)}
+  .remove-btn{font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;padding:5px 10px;border-radius:6px;border:1px solid rgba(0,0,0,.12);background:white;color:var(--text2);cursor:pointer}
+  .remove-btn:hover{background:#FFE8E0;border-color:var(--accent2);color:var(--accent2)}
 
-  .topbar {
-    width: 100%;
-    max-width: 540px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 20px 0 8px;
-    margin-bottom: 8px;
-  }
+  /* Subcategorías */
+  .subcat-section{margin-bottom:16px}
+  .subcat-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:8px}
+  .subcat-chips{display:flex;flex-wrap:wrap;gap:6px}
+  .subcat-chip{font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;padding:5px 12px;border-radius:20px;border:1.5px solid var(--border);background:white;color:var(--text2);cursor:pointer;transition:all .15s;white-space:nowrap}
+  .subcat-chip:hover{border-color:var(--primary);color:var(--primary)}
+  .subcat-chip.active{background:var(--primary);border-color:var(--primary);color:white}
+  .unmatched-box{background:#FFF8F0;border:1.5px solid #FFD0B0;border-radius:var(--radius);padding:14px 16px;margin-bottom:16px;font-size:13px;color:var(--text2)}
+  .unmatched-box strong{color:var(--accent2)}
 
-  .logo {
-    font-family: 'Sora', sans-serif;
-    font-weight: 800;
-    font-size: 22px;
-    color: var(--primary);
-    letter-spacing: -0.5px;
-  }
-  .logo span { color: var(--accent2); }
+  /* Floating cart */
+  .floating-cart{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);width:calc(100% - 32px);max-width:508px;background:var(--primary);border-radius:16px;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 8px 32px rgba(26,58,42,.35);cursor:pointer;transition:transform .2s;z-index:100}
+  .floating-cart:hover{transform:translateX(-50%) translateY(-2px)}
+  .cart-left{display:flex;align-items:center;gap:10px}
+  .cart-badge{width:28px;height:28px;background:var(--accent);border-radius:8px;font-family:'Sora',sans-serif;font-size:14px;font-weight:800;color:var(--primary);display:flex;align-items:center;justify-content:center}
+  .cart-label{font-size:14px;font-weight:600;color:white}
+  .cart-total{font-family:'Sora',sans-serif;font-size:18px;font-weight:800;color:var(--accent)}
 
-  .step-dots {
-    display: flex;
-    gap: 5px;
-  }
-  .dot {
-    width: 6px; height: 6px;
-    border-radius: 50%;
-    background: var(--border);
-    transition: all .3s;
-  }
-  .dot.active { background: var(--primary); width: 18px; border-radius: 3px; }
-  .dot.done { background: var(--accent); }
+  /* Resumen */
+  .savings-hero{background:var(--primary);border-radius:var(--radius);padding:28px 24px;text-align:center;margin-bottom:16px}
+  .savings-label{font-size:13px;font-weight:600;color:rgba(255,255,255,.6);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px}
+  .savings-amount{font-family:'Sora',sans-serif;font-size:48px;font-weight:800;color:var(--accent);line-height:1;margin-bottom:6px}
+  .savings-sub{font-size:14px;color:rgba(255,255,255,.7)}
+  .store-breakdown{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;margin-bottom:16px}
+  .breakdown-header{padding:14px 18px;font-family:'Sora',sans-serif;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);border-bottom:1px solid var(--border)}
+  .breakdown-row{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border)}
+  .breakdown-row:last-child{border-bottom:none}
+  .breakdown-store{display:flex;align-items:center;gap:10px}
+  .store-dot{width:10px;height:10px;border-radius:50%}
+  .breakdown-store-name{font-size:15px;font-weight:600;color:var(--text)}
+  .breakdown-items{font-size:12px;color:var(--text2)}
+  .breakdown-total{font-family:'Sora',sans-serif;font-size:16px;font-weight:700;color:var(--text)}
+  .vs-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+  .vs-card{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px;text-align:center}
+  .vs-label{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+  .vs-amount{font-family:'Sora',sans-serif;font-size:22px;font-weight:800}
+  .vs-amount.bad{color:#FF6240;text-decoration:line-through;opacity:.6}
+  .vs-amount.good{color:var(--primary)}
 
-  .screen {
-    width: 100%;
-    max-width: 540px;
-    animation: fadeUp .35s ease;
-  }
+  /* Auth */
+  .auth-card{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow-lg);padding:28px 24px;margin-bottom:16px}
+  .input-field{font-family:'DM Sans',sans-serif;font-size:15px;width:100%;padding:14px 16px;border-radius:var(--radius-sm);border:1.5px solid var(--border);background:#FAFAF8;color:var(--text);outline:none;transition:border-color .2s;margin-bottom:10px}
+  .input-field:focus{border-color:var(--primary);background:white}
+  .tab-switch{display:flex;background:#F0EEE8;border-radius:10px;padding:4px;margin-bottom:20px}
+  .tab-btn{flex:1;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;padding:9px;border:none;border-radius:7px;background:transparent;color:var(--text2);cursor:pointer;transition:all .15s}
+  .tab-btn.active{background:white;color:var(--primary);box-shadow:0 1px 4px rgba(0,0,0,.1)}
 
-  @keyframes fadeUp {
-    from { opacity: 0; transform: translateY(14px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
+  /* Donación */
+  .tip-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
+  .tip-btn{font-family:'Sora',sans-serif;font-size:16px;font-weight:700;padding:16px 8px;border-radius:var(--radius-sm);border:2px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;text-align:center;transition:all .15s}
+  .tip-btn:hover{border-color:var(--primary)}
+  .tip-btn.selected{border-color:var(--primary);background:var(--primary);color:white}
+  .tip-sub{font-size:10px;font-weight:500;margin-top:2px;opacity:.7}
 
-  .screen-title {
-    font-family: 'Sora', sans-serif;
-    font-size: 28px;
-    font-weight: 800;
-    line-height: 1.15;
-    color: var(--primary);
-    margin-bottom: 6px;
-    letter-spacing: -0.5px;
-  }
+  /* Redirect */
+  .redirect-card{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;text-decoration:none;transition:box-shadow .15s;border:2px solid transparent}
+  .redirect-card:hover{box-shadow:var(--shadow-lg)}
+  .redirect-card.cart-ready{border-color:var(--accent)}
+  .redirect-left{display:flex;align-items:center;gap:12px}
+  .redirect-logo-box{width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:22px}
+  .redirect-name{font-family:'Sora',sans-serif;font-size:16px;font-weight:700;color:var(--text)}
+  .redirect-items{font-size:13px;color:var(--text2)}
+  .redirect-total{font-family:'Sora',sans-serif;font-size:18px;font-weight:800;color:var(--primary)}
+  .redirect-arrow{font-size:18px;color:var(--text2);margin-left:8px}
+  .cart-status{font-size:11px;font-weight:600;padding:2px 8px;border-radius:8px;margin-top:3px;display:inline-block}
+  .cart-status.ok{background:#EDFFF4;color:#1A6B3A}
+  .cart-status.manual{background:#FFF8E0;color:#7A6000}
 
-  .screen-sub {
-    font-size: 15px;
-    color: var(--text2);
-    margin-bottom: 28px;
-    line-height: 1.5;
-  }
-
-  .card {
-    background: var(--surface);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    padding: 20px;
-  }
-
-  /* ── ZONA ── */
-  .province-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    max-height: 360px;
-    overflow-y: auto;
-    padding-right: 4px;
-  }
-  .province-btn {
-    font-family: 'DM Sans', sans-serif;
-    font-size: 14px;
-    font-weight: 500;
-    padding: 12px 14px;
-    border-radius: var(--radius-sm);
-    border: 1.5px solid var(--border);
-    background: var(--surface);
-    color: var(--text);
-    cursor: pointer;
-    text-align: left;
-    transition: all .15s;
-  }
-  .province-btn:hover { border-color: var(--primary); background: #F0F8F3; }
-  .province-btn.selected {
-    border-color: var(--primary);
-    background: var(--primary);
-    color: white;
-  }
-
-  /* ── LISTA ── */
-  .list-textarea {
-    font-family: 'DM Sans', sans-serif;
-    font-size: 17px;
-    line-height: 1.8;
-    width: 100%;
-    min-height: 180px;
-    padding: 16px;
-    border: 1.5px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--surface);
-    color: var(--text);
-    resize: none;
-    outline: none;
-    transition: border-color .2s;
-  }
-  .list-textarea:focus { border-color: var(--primary); }
-  .list-textarea::placeholder { color: #BCBAB4; }
-
-  .char-count {
-    font-size: 12px;
-    color: var(--text2);
-    text-align: right;
-    margin-top: 6px;
-  }
-
-  .trend-section { margin-top: 24px; }
-  .trend-title {
-    font-family: 'Sora', sans-serif;
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--text);
-    margin-bottom: 10px;
-  }
-  .trend-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .chip {
-    font-family: 'DM Sans', sans-serif;
-    font-size: 14px;
-    font-weight: 500;
-    padding: 8px 16px;
-    border-radius: 20px;
-    border: 1.5px solid var(--border);
-    background: var(--surface);
-    color: var(--text);
-    cursor: pointer;
-    transition: all .15s;
-    white-space: nowrap;
-  }
-  .chip:hover { border-color: var(--primary); background: #F0F8F3; }
-  .chip.added { border-color: var(--accent); background: #EDFFF4; color: var(--primary); }
-
-  /* ── RESULTADOS ── */
-  .product-card {
-    background: var(--surface);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    padding: 16px;
-    margin-bottom: 12px;
-    border: 1.5px solid transparent;
-    transition: border-color .2s;
-  }
-  .product-card.in-cart { border-color: var(--accent); }
-
-  .product-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 14px;
-  }
-  .product-header-left { display: flex; align-items: center; gap: 10px; }
-  .product-emoji { font-size: 26px; }
-  .product-name {
-    font-family: 'Sora', sans-serif;
-    font-size: 15px;
-    font-weight: 700;
-    color: var(--text);
-  }
-
-  /* Brand × Store table */
-  .brand-table {
-    width: 100%;
-    border-collapse: separate;
-    border-spacing: 0;
-    margin-bottom: 12px;
-    font-size: 12px;
-  }
-  .brand-table th {
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: .4px;
-    color: var(--text2);
-    padding: 0 6px 8px;
-    text-align: center;
-  }
-  .brand-table th.brand-col { text-align: left; padding-left: 0; }
-  .brand-table td { padding: 3px; }
-  .brand-table td.brand-label {
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--text);
-    padding: 3px 8px 3px 0;
-    max-width: 120px;
-    vertical-align: middle;
-  }
-  .brand-name-text {
-    display: block;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .brand-unit-badge {
-    display: inline-block;
-    font-size: 9px;
-    font-weight: 600;
-    color: var(--text2);
-    background: #F0EEE8;
-    border-radius: 4px;
-    padding: 1px 5px;
-    margin-top: 2px;
-  }
-
-  .price-cell {
-    text-align: center;
-    padding: 8px 4px;
-    border-radius: 8px;
-    border: 1.5px solid var(--border);
-    cursor: pointer;
-    transition: all .15s;
-    position: relative;
-    min-width: 62px;
-    white-space: nowrap;
-  }
-  .price-cell:hover:not(.unavailable) { border-color: var(--text2); background: #F5F3EE; }
-  .price-cell.cheapest-all { border-color: #4AE078; background: #EDFFF4; }
-  .price-cell.selected-cell {
-    border-color: var(--primary);
-    background: var(--primary);
-  }
-  .price-cell.selected-cell .cell-price { color: white; }
-  .price-cell.unavailable { background: #F8F8F6; cursor: default; }
-  .cell-price { font-size: 13px; font-weight: 700; color: var(--text); }
-  .cell-price.muted { font-size: 11px; color: #CCC; font-weight: 400; }
-
-  .cheapest-badge {
-    position: absolute;
-    top: -8px; left: 50%; transform: translateX(-50%);
-    font-size: 9px; font-weight: 700;
-    background: #4AE078; color: #1A3A2A;
-    padding: 2px 6px; border-radius: 10px;
-    white-space: nowrap;
-    pointer-events: none;
-  }
-
-  .selected-summary {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: #F0F8F3;
-    border: 1.5px solid var(--accent);
-    border-radius: var(--radius-sm);
-    padding: 10px 12px;
-    margin-bottom: 10px;
-    font-size: 13px;
-  }
-  .selected-summary strong { font-weight: 700; color: var(--primary); }
-
-  .remove-btn {
-    font-family: 'DM Sans', sans-serif;
-    font-size: 11px;
-    font-weight: 600;
-    padding: 5px 10px;
-    border-radius: 6px;
-    border: 1px solid rgba(0,0,0,0.12);
-    background: white;
-    color: var(--text2);
-    cursor: pointer;
-  }
-  .remove-btn:hover { background: #FFE8E0; border-color: var(--accent2); color: var(--accent2); }
-
-  .unmatched-box {
-    background: #FFF8F0;
-    border: 1.5px solid #FFD0B0;
-    border-radius: var(--radius);
-    padding: 14px 16px;
-    margin-bottom: 16px;
-    font-size: 13px;
-    color: var(--text2);
-  }
-  .unmatched-box strong { color: var(--accent2); }
-
-  /* ── FLOATING CART ── */
-  .floating-cart {
-    position: fixed;
-    bottom: 16px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: calc(100% - 32px);
-    max-width: 508px;
-    background: var(--primary);
-    border-radius: 16px;
-    padding: 14px 20px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    box-shadow: 0 8px 32px rgba(26,58,42,0.35);
-    cursor: pointer;
-    transition: transform .2s;
-    z-index: 100;
-  }
-  .floating-cart:hover { transform: translateX(-50%) translateY(-2px); }
-  .cart-left { display: flex; align-items: center; gap: 10px; }
-  .cart-badge {
-    width: 28px; height: 28px;
-    background: var(--accent);
-    border-radius: 8px;
-    font-family: 'Sora', sans-serif;
-    font-size: 14px;
-    font-weight: 800;
-    color: var(--primary);
-    display: flex; align-items: center; justify-content: center;
-  }
-  .cart-label { font-size: 14px; font-weight: 600; color: white; }
-  .cart-total { font-family: 'Sora', sans-serif; font-size: 18px; font-weight: 800; color: var(--accent); }
-
-  /* ── RESUMEN ── */
-  .savings-hero {
-    background: var(--primary);
-    border-radius: var(--radius);
-    padding: 28px 24px;
-    text-align: center;
-    margin-bottom: 16px;
-  }
-  .savings-label {
-    font-size: 13px;
-    font-weight: 600;
-    color: rgba(255,255,255,0.6);
-    text-transform: uppercase;
-    letter-spacing: .8px;
-    margin-bottom: 6px;
-  }
-  .savings-amount {
-    font-family: 'Sora', sans-serif;
-    font-size: 48px;
-    font-weight: 800;
-    color: var(--accent);
-    line-height: 1;
-    margin-bottom: 6px;
-  }
-  .savings-sub { font-size: 14px; color: rgba(255,255,255,0.7); }
-
-  .store-breakdown {
-    background: var(--surface);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    overflow: hidden;
-    margin-bottom: 16px;
-  }
-  .breakdown-header {
-    padding: 14px 18px;
-    font-family: 'Sora', sans-serif;
-    font-size: 13px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: .5px;
-    color: var(--text2);
-    border-bottom: 1px solid var(--border);
-  }
-  .breakdown-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 14px 18px;
-    border-bottom: 1px solid var(--border);
-  }
-  .breakdown-row:last-child { border-bottom: none; }
-  .breakdown-store {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-  .store-dot { width: 10px; height: 10px; border-radius: 50%; }
-  .breakdown-store-name { font-size: 15px; font-weight: 600; color: var(--text); }
-  .breakdown-items { font-size: 12px; color: var(--text2); }
-  .breakdown-total { font-family: 'Sora', sans-serif; font-size: 16px; font-weight: 700; color: var(--text); }
-
-  .vs-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-    margin-bottom: 16px;
-  }
-  .vs-card {
-    background: var(--surface);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    padding: 16px;
-    text-align: center;
-  }
-  .vs-label { font-size: 11px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
-  .vs-amount { font-family: 'Sora', sans-serif; font-size: 22px; font-weight: 800; }
-  .vs-amount.bad { color: #FF6240; text-decoration: line-through; opacity: .6; }
-  .vs-amount.good { color: var(--primary); }
-
-  /* ── AUTH ── */
-  .auth-card {
-    background: var(--surface);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow-lg);
-    padding: 28px 24px;
-    margin-bottom: 16px;
-  }
-  .input-field {
-    font-family: 'DM Sans', sans-serif;
-    font-size: 15px;
-    width: 100%;
-    padding: 14px 16px;
-    border-radius: var(--radius-sm);
-    border: 1.5px solid var(--border);
-    background: #FAFAF8;
-    color: var(--text);
-    outline: none;
-    transition: border-color .2s;
-    margin-bottom: 10px;
-  }
-  .input-field:focus { border-color: var(--primary); background: white; }
-
-  .tab-switch {
-    display: flex;
-    background: #F0EEE8;
-    border-radius: 10px;
-    padding: 4px;
-    margin-bottom: 20px;
-  }
-  .tab-btn {
-    flex: 1;
-    font-family: 'DM Sans', sans-serif;
-    font-size: 14px;
-    font-weight: 600;
-    padding: 9px;
-    border: none;
-    border-radius: 7px;
-    background: transparent;
-    color: var(--text2);
-    cursor: pointer;
-    transition: all .15s;
-  }
-  .tab-btn.active { background: white; color: var(--primary); box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
-
-  /* ── DONACIÓN ── */
-  .tip-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 8px;
-    margin-bottom: 14px;
-  }
-  .tip-btn {
-    font-family: 'Sora', sans-serif;
-    font-size: 16px;
-    font-weight: 700;
-    padding: 16px 8px;
-    border-radius: var(--radius-sm);
-    border: 2px solid var(--border);
-    background: var(--surface);
-    color: var(--text);
-    cursor: pointer;
-    text-align: center;
-    transition: all .15s;
-  }
-  .tip-btn:hover { border-color: var(--primary); }
-  .tip-btn.selected { border-color: var(--primary); background: var(--primary); color: white; }
-  .tip-sub { font-size: 10px; font-weight: 500; margin-top: 2px; opacity: .7; }
-
-  /* ── REDIRECT ── */
-  .redirect-card {
-    background: var(--surface);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    padding: 18px;
-    margin-bottom: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    text-decoration: none;
-    transition: box-shadow .15s;
-  }
-  .redirect-card:hover { box-shadow: var(--shadow-lg); }
-  .redirect-left { display: flex; align-items: center; gap: 12px; }
-  .redirect-logo-box {
-    width: 44px; height: 44px;
-    border-radius: 10px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 22px;
-  }
-  .redirect-name { font-family: 'Sora', sans-serif; font-size: 16px; font-weight: 700; color: var(--text); }
-  .redirect-items { font-size: 13px; color: var(--text2); }
-  .redirect-total { font-family: 'Sora', sans-serif; font-size: 18px; font-weight: 800; color: var(--primary); }
-  .redirect-arrow { font-size: 18px; color: var(--text2); margin-left: 8px; }
-
-  /* ── PRIMARY BTN ── */
-  .btn-primary {
-    font-family: 'Sora', sans-serif;
-    font-size: 16px;
-    font-weight: 700;
-    width: 100%;
-    padding: 18px;
-    border-radius: 14px;
-    border: none;
-    background: var(--accent2);
-    color: white;
-    cursor: pointer;
-    transition: opacity .15s, transform .1s;
-    margin-top: 8px;
-    letter-spacing: -.2px;
-  }
-  .btn-primary:hover { opacity: .92; transform: translateY(-1px); }
-  .btn-primary:active { transform: translateY(0); }
-  .btn-primary:disabled { opacity: .4; cursor: not-allowed; transform: none; }
-
-  .btn-secondary {
-    font-family: 'DM Sans', sans-serif;
-    font-size: 14px;
-    font-weight: 600;
-    width: 100%;
-    padding: 14px;
-    border-radius: 12px;
-    border: 1.5px solid var(--border);
-    background: transparent;
-    color: var(--text2);
-    cursor: pointer;
-    transition: all .15s;
-    margin-top: 8px;
-  }
-  .btn-secondary:hover { border-color: var(--text2); color: var(--text); }
-
-  .back-btn {
-    font-family: 'DM Sans', sans-serif;
-    font-size: 14px;
-    font-weight: 500;
-    background: none;
-    border: none;
-    color: var(--text2);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 0;
-    margin-bottom: 20px;
-  }
-  .back-btn:hover { color: var(--text); }
-
-  .divider {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin: 14px 0;
-  }
-  .divider::before, .divider::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: var(--border);
-  }
-  .divider span { font-size: 12px; color: var(--text2); }
-
-  .pw-hint { font-size: 11px; color: var(--text2); margin-bottom: 10px; line-height: 1.5; }
-
-  /* ── CONFETTI EMOJI ── */
-  .confetti { font-size: 40px; text-align: center; margin-bottom: 12px; animation: pop .4s ease; }
-  @keyframes pop { 0% { transform: scale(0); } 70% { transform: scale(1.2); } 100% { transform: scale(1); } }
-
-  .tag {
-    display: inline-block;
-    font-size: 11px;
-    font-weight: 600;
-    padding: 3px 8px;
-    border-radius: 6px;
-    background: #EDFFF4;
-    color: #1A6B3A;
-    margin-left: 6px;
-    vertical-align: middle;
-  }
+  /* Botones */
+  .btn-primary{font-family:'Sora',sans-serif;font-size:16px;font-weight:700;width:100%;padding:18px;border-radius:14px;border:none;background:var(--accent2);color:white;cursor:pointer;transition:opacity .15s,transform .1s;margin-top:8px;letter-spacing:-.2px}
+  .btn-primary:hover{opacity:.92;transform:translateY(-1px)}
+  .btn-primary:active{transform:translateY(0)}
+  .btn-primary:disabled{opacity:.4;cursor:not-allowed;transform:none}
+  .btn-secondary{font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;width:100%;padding:14px;border-radius:12px;border:1.5px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;transition:all .15s;margin-top:8px}
+  .btn-secondary:hover{border-color:var(--text2);color:var(--text)}
+  .back-btn{font-family:'DM Sans',sans-serif;font-size:14px;font-weight:500;background:none;border:none;color:var(--text2);cursor:pointer;display:flex;align-items:center;gap:4px;padding:0;margin-bottom:20px}
+  .back-btn:hover{color:var(--text)}
+  .pw-hint{font-size:11px;color:var(--text2);margin-bottom:10px;line-height:1.5}
+  .confetti{font-size:40px;text-align:center;margin-bottom:12px;animation:pop .4s ease}
+  @keyframes pop{0%{transform:scale(0)}70%{transform:scale(1.2)}100%{transform:scale(1)}}
 `;
 
 // ─── COMPONENTS ───────────────────────────────────────────────────────────────
 
 function TopBar({ step }) {
-  const total = 6;
   return (
     <div className="topbar">
       <div className="logo">Super<span>Compare</span></div>
       <div className="step-dots">
-        {Array.from({ length: total }).map((_, i) => (
+        {Array.from({ length: 6 }).map((_, i) => (
           <div key={i} className={`dot ${i < step - 1 ? "done" : i === step - 1 ? "active" : ""}`} />
         ))}
       </div>
@@ -1061,20 +606,15 @@ function TopBar({ step }) {
   );
 }
 
-// ── Step 1: Zona ──────────────────────────────────────────────────────────────
 function ZonaStep({ onNext }) {
   const [selected, setSelected] = useState(null);
   return (
     <div className="screen">
       <h1 className="screen-title">¿Desde dónde comprás?</h1>
-      <p className="screen-sub">Seleccioná tu provincia para ver los supermercados disponibles en tu zona.</p>
+      <p className="screen-sub">Seleccioná tu provincia para ver los supermercados disponibles.</p>
       <div className="province-grid" style={{ marginBottom: 24 }}>
-        {PROVINCES.map(p => (
-          <button
-            key={p}
-            className={`province-btn ${selected === p ? "selected" : ""}`}
-            onClick={() => setSelected(p)}
-          >
+        {PROVINCES.map((p) => (
+          <button key={p} className={`province-btn ${selected === p ? "selected" : ""}`} onClick={() => setSelected(p)}>
             {selected === p ? "✓ " : ""}{p}
           </button>
         ))}
@@ -1086,52 +626,38 @@ function ZonaStep({ onNext }) {
   );
 }
 
-// ── Step 2: Lista ─────────────────────────────────────────────────────────────
 function ListaStep({ onNext, onBack }) {
-  const [text, setText] = useState("");
+  const [text, setText]           = useState("");
   const [addedChips, setAddedChips] = useState([]);
   const MAX = 2500;
 
   const addChip = (chip) => {
     const lower = chip.toLowerCase();
     if (addedChips.includes(lower)) return;
-    setAddedChips(prev => [...prev, lower]);
-    setText(prev => (prev ? prev + "\n" + chip : chip));
+    setAddedChips((prev) => [...prev, lower]);
+    setText((prev) => (prev ? prev + "\n" + chip : chip));
   };
-
-  const canSearch = text.trim().length > 0;
 
   return (
     <div className="screen">
       <button className="back-btn" onClick={onBack}>← Volver</button>
       <h1 className="screen-title">Tu compra más rápido</h1>
-      <p className="screen-sub">Escribí tu lista o copiá y pegá. Un producto por línea.</p>
-
-      <textarea
-        className="list-textarea"
-        placeholder={"Leche\nArroz\nFideos\nCerveza\n..."}
-        value={text}
-        onChange={e => e.target.value.length <= MAX && setText(e.target.value)}
-        autoFocus
-      />
+      <p className="screen-sub">Escribí tu lista. Un producto por línea.</p>
+      <textarea className="list-textarea" placeholder={"Leche\nArroz\nFideos\n..."}
+        value={text} onChange={(e) => e.target.value.length <= MAX && setText(e.target.value)} autoFocus />
       <div className="char-count">{text.length}/{MAX}</div>
-
       <div className="trend-section">
-        <div className="trend-title">Productos que son tendencia</div>
+        <div className="trend-title">Productos tendencia</div>
         <div className="trend-chips">
-          {TRENDING.map(t => (
-            <button
-              key={t}
-              className={`chip ${addedChips.includes(t.toLowerCase()) ? "added" : ""}`}
-              onClick={() => addChip(t)}
-            >
+          {TRENDING.map((t) => (
+            <button key={t} className={`chip ${addedChips.includes(t.toLowerCase()) ? "added" : ""}`}
+              onClick={() => addChip(t)}>
               {addedChips.includes(t.toLowerCase()) ? "✓ " : ""}{t}
             </button>
           ))}
         </div>
       </div>
-
-      <button className="btn-primary" style={{ marginTop: 28 }} disabled={!canSearch} onClick={() => onNext(text)}>
+      <button className="btn-primary" style={{ marginTop: 28 }} disabled={!text.trim()} onClick={() => onNext(text)}>
         Buscar productos →
       </button>
       <button className="btn-secondary" onClick={() => setText("")}>Borrar lista</button>
@@ -1139,16 +665,12 @@ function ListaStep({ onNext, onBack }) {
   );
 }
 
-// ── ProductCard: brand × store grid ──────────────────────────────────────────
 function ProductCard({ product, selection, onSelect, onRemove }) {
-  // selection: { brandIdx, store, price } | null
   const storeKeys = Object.keys(STORES);
-
-  // Find global cheapest cell
   let globalMin = Infinity;
-  product.brands.forEach(b => storeKeys.forEach(s => {
-    if (b.prices[s] && b.prices[s] < globalMin) globalMin = b.prices[s];
-  }));
+  product.brands.forEach((b) =>
+    storeKeys.forEach((s) => { if (b.prices[s] && b.prices[s] < globalMin) globalMin = b.prices[s]; })
+  );
 
   return (
     <div className={`product-card ${selection ? "in-cart" : ""}`}>
@@ -1157,9 +679,7 @@ function ProductCard({ product, selection, onSelect, onRemove }) {
           <span className="product-emoji">{product.emoji}</span>
           <div className="product-name">{product.name}</div>
         </div>
-        {selection && (
-          <button className="remove-btn" onClick={onRemove}>✕ Quitar</button>
-        )}
+        {selection && <button className="remove-btn" onClick={onRemove}>✕ Quitar</button>}
       </div>
 
       {selection && (
@@ -1177,9 +697,7 @@ function ProductCard({ product, selection, onSelect, onRemove }) {
         <thead>
           <tr>
             <th className="brand-col">Marca</th>
-            {storeKeys.map(s => (
-              <th key={s}>{STORES[s].name}</th>
-            ))}
+            {storeKeys.map((s) => <th key={s}>{STORES[s].name}</th>)}
           </tr>
         </thead>
         <tbody>
@@ -1189,18 +707,16 @@ function ProductCard({ product, selection, onSelect, onRemove }) {
                 <span className="brand-name-text">{brand.brand}</span>
                 <span className="brand-unit-badge">{brand.unit}</span>
               </td>
-              {storeKeys.map(s => {
+              {storeKeys.map((s) => {
                 const price = brand.prices[s];
-                const isGlobalMin = price === globalMin;
-                const isSelected = selection?.brandIdx === bi && selection?.store === s;
+                const isMin = price === globalMin;
+                const isSel = selection?.brandIdx === bi && selection?.store === s;
                 return (
                   <td key={s}>
                     {price ? (
-                      <div
-                        className={`price-cell ${isGlobalMin ? "cheapest-all" : ""} ${isSelected ? "selected-cell" : ""}`}
-                        onClick={() => onSelect(bi, s, price)}
-                      >
-                        {isGlobalMin && !isSelected && <div className="cheapest-badge">★ mejor</div>}
+                      <div className={`price-cell ${isMin ? "cheapest-all" : ""} ${isSel ? "selected-cell" : ""}`}
+                        onClick={() => onSelect(bi, s, price)}>
+                        {isMin && !isSel && <div className="cheapest-badge">★ mejor</div>}
                         <div className="cell-price">{fmt(price)}</div>
                       </div>
                     ) : (
@@ -1219,70 +735,77 @@ function ProductCard({ product, selection, onSelect, onRemove }) {
   );
 }
 
-// ── Step 3: Resultados + Carrito ──────────────────────────────────────────────
 function ResultadosStep({ listText, storeKeys, onNext, onBack }) {
   const lines = parseList(listText);
-  const [products, setProducts] = useState([]);
-  const [unmatched, setUnmatched] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [usingMock, setUsingMock] = useState(false);
-  const [cart, setCart] = useState({}); // { productId: { brandIdx, store, price } }
+  const [rawResults, setRawResults]   = useState({});
+  const [unmatched, setUnmatched]     = useState([]);
+  const [loading, setLoading]         = useState(true);
+  const [usingMock, setUsingMock]     = useState(false);
+  const [subcatFilter, setSubcatFilter] = useState({});
+  const [cart, setCart]               = useState({});
 
   useEffect(() => {
     let cancelled = false;
-
     async function fetchAll() {
       setLoading(true);
-      const found = [];
-      const notFound = [];
-
-      // Intentar API real primero
+      const raw = {}, notFound = [];
       try {
-        await apiCall("/"); // health check
-        // Si el back responde, buscar cada línea concurrentemente
+        await apiCall("/");
         const results = await Promise.allSettled(
           lines.map(async (line, i) => {
             try {
-              const apiResults = await searchProducts(line, storeKeys);
-              const product = buildProductFromResults(line, apiResults, storeKeys, i + 1);
-              return { line, product };
+              const { grouped, allItems } = await searchProducts(line, storeKeys);
+              return { line, i, grouped, allItems };
             } catch {
-              return { line, product: null };
+              return { line, i, grouped: null, allItems: [] };
             }
           })
         );
-
-        results.forEach(r => {
+        results.forEach((r) => {
           if (r.status === "fulfilled") {
-            if (r.value.product) found.push(r.value.product);
-            else notFound.push(r.value.line);
+            const { line, i, grouped, allItems } = r.value;
+            if (grouped) raw[i] = { line, grouped, allItems };
+            else notFound.push(line);
           }
         });
-
-        if (!cancelled) {
-          setProducts(found);
-          setUnmatched(notFound);
-          setUsingMock(false);
-        }
+        if (!cancelled) { setRawResults(raw); setUnmatched(notFound); setUsingMock(false); }
       } catch {
-        // Back no disponible → fallback a mock
+        // back caído → mock
         const { matched, unmatched: um } = matchProductsMock(lines);
-        if (!cancelled) {
-          setProducts(matched);
-          setUnmatched(um);
-          setUsingMock(true);
-        }
+        const mockRaw = {};
+        matched.forEach((p, i) => {
+          const grouped = {};
+          storeKeys.forEach((sk) => {
+            grouped[sk] = p.brands.map((b) => ({
+              name: `${p.name} ${b.brand}`, brand: b.brand,
+              price: b.prices[sk] || 0, effective_price: b.prices[sk] || 0,
+              unit: b.unit, store: sk, category: null, external_id: "",
+            })).filter((x) => x.price > 0);
+          });
+          mockRaw[i] = { line: p.name, grouped, allItems: [] };
+        });
+        if (!cancelled) { setRawResults(mockRaw); setUnmatched(um); setUsingMock(true); }
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
-
     fetchAll();
     return () => { cancelled = true; };
-  }, [listText]);
+  }, [listText, storeKeys]);
+
+  const products = Object.entries(rawResults).map(([idx, { line, grouped }]) => {
+    const i = parseInt(idx);
+    return buildProductFromResults(line, grouped, storeKeys, i + 1, subcatFilter[i] || null);
+  }).filter(Boolean);
+
+  const subcatsByLine = Object.fromEntries(
+    Object.entries(rawResults).map(([idx, { line, allItems }]) => [
+      idx, extractSubcategories(allItems, line),
+    ])
+  );
 
   const select = (productId, brandIdx, store, price) => {
-    setCart(prev => {
+    setCart((prev) => {
       const cur = prev[productId];
       if (cur?.brandIdx === brandIdx && cur?.store === store) {
         const n = { ...prev }; delete n[productId]; return n;
@@ -1290,24 +813,24 @@ function ResultadosStep({ listText, storeKeys, onNext, onBack }) {
       return { ...prev, [productId]: { brandIdx, store, price } };
     });
   };
-
-  const remove = (productId) => {
-    setCart(prev => { const n = { ...prev }; delete n[productId]; return n; });
-  };
+  const remove = (productId) =>
+    setCart((prev) => { const n = { ...prev }; delete n[productId]; return n; });
 
   const cartCount = Object.keys(cart).length;
   const cartTotal = Object.values(cart).reduce((s, i) => s + i.price, 0);
-  const cartItems = products.filter(p => cart[p.id]).map(p => ({ product: p, ...cart[p.id] }));
+  const cartItems = products.filter((p) => cart[p.id]).map((p) => ({ product: p, ...cart[p.id] }));
 
-  if (loading) {
+  if (loading)
     return (
       <div className="screen" style={{ textAlign: "center", paddingTop: 60 }}>
         <div style={{ fontSize: 40, marginBottom: 16 }}>🔍</div>
-        <h2 style={{ fontFamily: "'Sora', sans-serif", fontSize: 20, fontWeight: 700, color: "var(--primary)", marginBottom: 8 }}>
+        <h2 style={{ fontFamily: "'Sora',sans-serif", fontSize: 20, fontWeight: 700, color: "var(--primary)", marginBottom: 8 }}>
           Buscando en 4 súpers...
         </h2>
-        <p style={{ color: "var(--text2)", fontSize: 14 }}>Comparando {lines.length} producto{lines.length !== 1 ? "s" : ""} en tiempo real</p>
-        <div style={{ display: "flex", justifyContent: "center", gap: 6, marginTop: 24 }}>
+        <p style={{ color: "var(--text2)", fontSize: 14 }}>
+          Comparando {lines.length} producto{lines.length !== 1 ? "s" : ""} en tiempo real
+        </p>
+        <div style={{ display: "flex", justifyContent: "center", gap: 6, marginTop: 24, flexWrap: "wrap" }}>
           {Object.entries(STORES).map(([k, s]) => (
             <div key={k} style={{ padding: "6px 12px", borderRadius: 20, background: s.bg, fontSize: 13, fontWeight: 600, color: s.color }}>
               {s.logo} {s.name}
@@ -1316,7 +839,6 @@ function ResultadosStep({ listText, storeKeys, onNext, onBack }) {
         </div>
       </div>
     );
-  }
 
   return (
     <div className="screen" style={{ paddingBottom: cartCount > 0 ? 90 : 0 }}>
@@ -1332,23 +854,49 @@ function ResultadosStep({ listText, storeKeys, onNext, onBack }) {
           ⚠️ Back no disponible — mostrando datos de demostración
         </div>
       )}
-
       {unmatched.length > 0 && (
-        <div className="unmatched-box">
-          <strong>No encontramos:</strong> {unmatched.join(", ")}
-        </div>
+        <div className="unmatched-box"><strong>No encontramos:</strong> {unmatched.join(", ")}</div>
       )}
 
-      {products.map(product => (
-        <ProductCard
-          key={product.id}
-          product={product}
-          storeKeys={storeKeys}
-          selection={cart[product.id] || null}
-          onSelect={(bi, s, price) => select(product.id, bi, s, price)}
-          onRemove={() => remove(product.id)}
-        />
-      ))}
+      {Object.entries(rawResults).map(([idx]) => {
+        const i = parseInt(idx);
+        const product  = products.find((p) => p.id === i + 1);
+        const subcats  = subcatsByLine[idx] || [];
+        const activeSubcat = subcatFilter[i] || null;
+        return (
+          <div key={i}>
+            {subcats.length > 1 && (
+              <div className="subcat-section">
+                <div className="subcat-label">¿Qué tipo de {rawResults[idx].line.toLowerCase()}?</div>
+                <div className="subcat-chips">
+                  <button className={`subcat-chip ${!activeSubcat ? "active" : ""}`}
+                    onClick={() => setSubcatFilter((prev) => ({ ...prev, [i]: null }))}>
+                    Todos
+                  </button>
+                  {subcats.map((s) => (
+                    <button key={s} className={`subcat-chip ${activeSubcat === s ? "active" : ""}`}
+                      onClick={() => setSubcatFilter((prev) => ({ ...prev, [i]: s }))}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {product ? (
+              <ProductCard
+                product={product}
+                selection={cart[product.id] || null}
+                onSelect={(bi, s, price) => select(product.id, bi, s, price)}
+                onRemove={() => remove(product.id)}
+              />
+            ) : (
+              <div className="unmatched-box" style={{ marginBottom: 12 }}>
+                Sin resultados para <strong>{rawResults[idx].line}</strong> en esta categoría.
+              </div>
+            )}
+          </div>
+        );
+      })}
 
       {cartCount > 0 && (
         <div className="floating-cart" onClick={() => onNext(cartItems)}>
@@ -1363,34 +911,23 @@ function ResultadosStep({ listText, storeKeys, onNext, onBack }) {
   );
 }
 
-// ── Step 4: Resumen ───────────────────────────────────────────────────────────
 function ResumenStep({ cartItems, onNext, onBack }) {
   const { totalOptimized, totalWorst, savings, storeBreakdown } = computeOptimization(cartItems);
   const pct = Math.round((savings / totalWorst) * 100);
-
   return (
     <div className="screen">
       <button className="back-btn" onClick={onBack}>← Editar carrito</button>
       <h1 className="screen-title">Tu ahorro</h1>
       <p className="screen-sub">Comprando en el súper más barato para cada marca elegida.</p>
-
       <div className="savings-hero">
         <div className="savings-label">Ahorrás</div>
         <div className="savings-amount">{fmt(savings)}</div>
         <div className="savings-sub">un {pct}% menos que si compraras todo en el más caro</div>
       </div>
-
       <div className="vs-row">
-        <div className="vs-card">
-          <div className="vs-label">Sin optimizar</div>
-          <div className="vs-amount bad">{fmt(totalWorst)}</div>
-        </div>
-        <div className="vs-card">
-          <div className="vs-label">Con SuperCompare</div>
-          <div className="vs-amount good">{fmt(totalOptimized)}</div>
-        </div>
+        <div className="vs-card"><div className="vs-label">Sin optimizar</div><div className="vs-amount bad">{fmt(totalWorst)}</div></div>
+        <div className="vs-card"><div className="vs-label">Con SuperCompare</div><div className="vs-amount good">{fmt(totalOptimized)}</div></div>
       </div>
-
       <div className="store-breakdown">
         <div className="breakdown-header">Desglose por súper</div>
         {storeBreakdown.map(({ store, total, items }) => (
@@ -1400,7 +937,7 @@ function ResumenStep({ cartItems, onNext, onBack }) {
               <div>
                 <div className="breakdown-store-name">{STORES[store].name}</div>
                 <div className="breakdown-items">
-                  {items.map(i => `${i.product.emoji} ${i.product.brands[i.brandIdx].brand}`).join(" · ")}
+                  {items.map((i) => `${i.product.emoji} ${i.product.brands[i.brandIdx].brand}`).join(" · ")}
                 </div>
               </div>
             </div>
@@ -1408,40 +945,31 @@ function ResumenStep({ cartItems, onNext, onBack }) {
           </div>
         ))}
       </div>
-
-      <button className="btn-primary" onClick={onNext}>
-        🔒 Ir a comprar — creá tu cuenta gratis
-      </button>
+      <button className="btn-primary" onClick={onNext}>🔒 Ir a comprar — creá tu cuenta gratis</button>
       <p style={{ textAlign: "center", fontSize: 12, color: "var(--text2)", marginTop: 10 }}>
-        Es gratis. Solo para guardar tu lista y redirigirte a cada súper.
+        Es gratis. Solo para guardar tu lista y redirigirte.
       </p>
     </div>
   );
 }
 
-// ── Step 5: Auth ──────────────────────────────────────────────────────────────
 function AuthStep({ onNext, onBack }) {
-  const [mode, setMode] = useState("register"); // "login" | "register"
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [mode, setMode]       = useState("register");
+  const [name, setName]       = useState("");
+  const [email, setEmail]     = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-
-  const [error, setError] = useState("");
-  const pwOk = password.length >= 8;
-  const canSubmit = email.includes("@") && pwOk && (mode === "login" || name.trim().length > 0);
+  const [error, setError]     = useState("");
+  const pwOk       = password.length >= 8;
+  const canSubmit  = email.includes("@") && pwOk && (mode === "login" || name.trim().length > 0);
 
   const handle = async () => {
     if (!canSubmit) return;
-    setLoading(true);
-    setError("");
+    setLoading(true); setError("");
     try {
-      if (mode === "register") {
-        await register(name, email, password, "mendoza", Object.keys(STORES));
-      } else {
-        await login(email, password);
-      }
-      onNext({ name, email });
+      if (mode === "register") await register(name, email, password, "mendoza", Object.keys(STORES));
+      else await login(email, password);
+      onNext();
     } catch (err) {
       setError(err.message || "Error al autenticar. Verificá tus datos.");
     } finally {
@@ -1454,140 +982,166 @@ function AuthStep({ onNext, onBack }) {
       <button className="back-btn" onClick={onBack}>← Volver al resumen</button>
       <div className="confetti">🎉</div>
       <h1 className="screen-title" style={{ textAlign: "center" }}>
-        ¡Ahorrás {""}<span style={{ color: "var(--accent2)" }}>mucho</span>!
+        ¡Ahorrás <span style={{ color: "var(--accent2)" }}>mucho</span>!
       </h1>
       <p className="screen-sub" style={{ textAlign: "center", marginBottom: 20 }}>
         Creá tu cuenta gratis para ir a comprar y guardar tus listas.
       </p>
-
       <div className="auth-card">
         <div className="tab-switch">
           <button className={`tab-btn ${mode === "register" ? "active" : ""}`} onClick={() => setMode("register")}>Crear cuenta</button>
-          <button className={`tab-btn ${mode === "login" ? "active" : ""}`} onClick={() => setMode("login")}>Ya tengo cuenta</button>
+          <button className={`tab-btn ${mode === "login"    ? "active" : ""}`} onClick={() => setMode("login")}>Ya tengo cuenta</button>
         </div>
-
         {mode === "register" && (
-          <input className="input-field" placeholder="Tu nombre" value={name} onChange={e => setName(e.target.value)} />
+          <input className="input-field" placeholder="Tu nombre" value={name} onChange={(e) => setName(e.target.value)} />
         )}
-        <input className="input-field" placeholder="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} />
-        <input className="input-field" placeholder="Contraseña" type="password" value={password} onChange={e => setPassword(e.target.value)} />
+        <input className="input-field" placeholder="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <input className="input-field" placeholder="Contraseña" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
         {mode === "register" && !pwOk && password.length > 0 && (
           <p className="pw-hint">La contraseña debe tener al menos 8 caracteres.</p>
         )}
-
         <button className="btn-primary" disabled={!canSubmit || loading} onClick={handle} style={{ marginTop: 12 }}>
           {loading ? "Entrando..." : mode === "register" ? "Crear cuenta gratis →" : "Ingresar →"}
         </button>
-        {error && (
-          <p style={{ fontSize: 13, color: "var(--accent2)", textAlign: "center", marginTop: 8 }}>⚠️ {error}</p>
-        )}
+        {error && <p style={{ fontSize: 13, color: "var(--accent2)", textAlign: "center", marginTop: 8 }}>⚠️ {error}</p>}
       </div>
-
       <p style={{ fontSize: 11, color: "var(--text2)", textAlign: "center", marginTop: 8 }}>
-        Al continuar aceptás los términos de uso. No te vamos a mandar spam.
+        Al continuar aceptás los términos de uso.
       </p>
     </div>
   );
 }
 
-// ── Step 6: Donación ──────────────────────────────────────────────────────────
 function DonacionStep({ savings, onNext }) {
   const [selected, setSelected] = useState(null);
-  const tips = [
-    { pct: 5,  label: "5%" },
-    { pct: 10, label: "10%" },
-    { pct: 15, label: "15%" },
-    { pct: 20, label: "20%" },
-  ];
-
+  const tips = [{ pct: 5 }, { pct: 10 }, { pct: 15 }, { pct: 20 }];
   return (
     <div className="screen">
       <div className="confetti">🙌</div>
       <h1 className="screen-title" style={{ textAlign: "center" }}>¿Te sirvió?</h1>
       <p className="screen-sub" style={{ textAlign: "center" }}>
         Dejanos una propina voluntaria para seguir mejorando la app.
-        Vos ahorrás, nosotros crecemos.
       </p>
-
       <div className="card" style={{ marginBottom: 16 }}>
         <div style={{ textAlign: "center", marginBottom: 20 }}>
           <div style={{ fontSize: 13, color: "var(--text2)", marginBottom: 4 }}>Ahorraste</div>
-          <div style={{ fontFamily: "'Sora', sans-serif", fontSize: 36, fontWeight: 800, color: "var(--primary)" }}>
+          <div style={{ fontFamily: "'Sora',sans-serif", fontSize: 36, fontWeight: 800, color: "var(--primary)" }}>
             {fmt(savings)}
           </div>
         </div>
-
         <div className="tip-grid">
-          {tips.map(t => {
+          {tips.map((t) => {
             const amount = Math.round(savings * t.pct / 100);
             return (
-              <button
-                key={t.pct}
-                className={`tip-btn ${selected === t.pct ? "selected" : ""}`}
-                onClick={() => setSelected(selected === t.pct ? null : t.pct)}
-              >
-                {t.label}
-                <div className="tip-sub">{fmt(amount)}</div>
+              <button key={t.pct} className={`tip-btn ${selected === t.pct ? "selected" : ""}`}
+                onClick={() => setSelected(selected === t.pct ? null : t.pct)}>
+                {t.pct}%<div className="tip-sub">{fmt(amount)}</div>
               </button>
             );
           })}
         </div>
-
         {selected && (
           <button className="btn-primary" onClick={() => onNext(selected)}>
             Dejar propina de {fmt(Math.round(savings * selected / 100))} →
           </button>
         )}
       </div>
-
-      <button className="btn-secondary" onClick={() => onNext(null)}>
-        Continuar sin propina
-      </button>
+      <button className="btn-secondary" onClick={() => onNext(null)}>Continuar sin propina</button>
     </div>
   );
 }
 
 // ── Step 7: Redirect ──────────────────────────────────────────────────────────
-function RedirectStep({ storeBreakdown }) {
-  const STORE_URLS = {
-    vea:  "https://www.vea.com.ar",
-    mas:  "https://www.masonline.com.ar",
-    coto: "https://www.cotodigital.com.ar",
-    modo: "https://www.modomarket.com",
-  };
+// Ahora llama a /api/cart/build y usa las URLs de checkout reales.
+// Si el back falla o un ítem no tiene external_id, cae gracefully a la homepage.
+function RedirectStep({ cartItems, storeBreakdown }) {
+  // cartInfo[frontKey] = { url, success, itemsAdded }
+  const [cartInfo, setCartInfo]   = useState({});
+  const [loading, setLoading]     = useState(true);
+
+  useEffect(() => {
+    async function prepare() {
+      setLoading(true);
+      const info = {};
+
+      const result = await buildCarts(cartItems);
+
+      if (result?.carts) {
+        result.carts.forEach((c) => {
+          const fk = BACK_TO_FRONT[c.store] || c.store;
+          info[fk] = {
+            url:        c.checkout_url,
+            success:    c.success,
+            itemsAdded: c.items_added,
+          };
+        });
+      }
+
+      // Fallback para tiendas sin respuesta del back
+      storeBreakdown.forEach(({ store }) => {
+        if (!info[store]) {
+          info[store] = { url: STORES[store].url, success: false, itemsAdded: 0 };
+        }
+      });
+
+      setCartInfo(info);
+      setLoading(false);
+    }
+    prepare();
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (loading)
+    return (
+      <div className="screen" style={{ textAlign: "center", paddingTop: 60 }}>
+        <div style={{ fontSize: 40, marginBottom: 16 }}>🛒</div>
+        <h2 style={{ fontFamily: "'Sora',sans-serif", fontSize: 20, fontWeight: 700, color: "var(--primary)", marginBottom: 8 }}>
+          Preparando tus carritos...
+        </h2>
+        <p style={{ color: "var(--text2)", fontSize: 14 }}>Cargando productos en cada súper</p>
+      </div>
+    );
 
   return (
     <div className="screen">
       <div className="confetti">🛒</div>
       <h1 className="screen-title" style={{ textAlign: "center" }}>Listo para comprar</h1>
       <p className="screen-sub" style={{ textAlign: "center" }}>
-        Tocá cada súper para ir directamente con tu lista. Los productos ya están cargados.
+        Tocá cada súper para ir directo con tu carrito cargado.
       </p>
 
-      {storeBreakdown.map(({ store, total, items }) => (
-        <a
-          key={store}
-          className="redirect-card"
-          href={STORE_URLS[store]}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ display: "flex", textDecoration: "none" }}
-        >
-          <div className="redirect-left">
-            <div className="redirect-logo-box" style={{ background: STORES[store].bg }}>
-              {STORES[store].logo}
+      {storeBreakdown.map(({ store, total, items }) => {
+        const ci = cartInfo[store] || { url: STORES[store].url, success: false, itemsAdded: 0 };
+        return (
+          <a key={store}
+            className={`redirect-card ${ci.success ? "cart-ready" : ""}`}
+            href={ci.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ display: "flex", textDecoration: "none" }}
+          >
+            <div className="redirect-left">
+              <div className="redirect-logo-box" style={{ background: STORES[store].bg }}>
+                {STORES[store].logo}
+              </div>
+              <div>
+                <div className="redirect-name">{STORES[store].name}</div>
+                <div className="redirect-items">
+                  {items.map((i) => i.product.brands[i.brandIdx].brand).join(", ")}
+                </div>
+                <span className={`cart-status ${ci.success ? "ok" : "manual"}`}>
+                  {ci.success
+                    ? `✓ ${ci.itemsAdded} producto${ci.itemsAdded !== 1 ? "s" : ""} en carrito`
+                    : "Carga manual en el sitio"}
+                </span>
+              </div>
             </div>
-            <div>
-              <div className="redirect-name">{STORES[store].name}</div>
-              <div className="redirect-items">{items.map(i => i.product.brands[i.brandIdx].brand).join(", ")}</div>
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <div className="redirect-total">{fmt(total)}</div>
+              <div className="redirect-arrow">→</div>
             </div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center" }}>
-            <div className="redirect-total">{fmt(total)}</div>
-            <div className="redirect-arrow">→</div>
-          </div>
-        </a>
-      ))}
+          </a>
+        );
+      })}
 
       <div style={{ textAlign: "center", marginTop: 24, fontSize: 13, color: "var(--text2)" }}>
         💡 Guardamos tu lista para la próxima compra
@@ -1598,13 +1152,10 @@ function RedirectStep({ storeBreakdown }) {
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function SuperCompare() {
-  const [step, setStep] = useState(1);
-  const [zona, setZona] = useState(null);
-  const [storeKeys, setStoreKeys] = useState(Object.keys(STORES)); // default: todos
-  const [listText, setListText] = useState("");
+  const [step, setStep]           = useState(1);
+  const [storeKeys, setStoreKeys] = useState(Object.keys(STORES));
+  const [listText, setListText]   = useState("");
   const [cartItems, setCartItems] = useState([]);
-  const [user, setUser] = useState(null);
-  const [tip, setTip] = useState(null);
 
   const opt = cartItems.length > 0 ? computeOptimization(cartItems) : null;
 
@@ -1613,45 +1164,27 @@ export default function SuperCompare() {
       <style>{css}</style>
       <div className="app">
         <TopBar step={step} />
-
         {step === 1 && (
-          <ZonaStep onNext={(z, keys) => { setZona(z); if (keys) setStoreKeys(keys); setStep(2); }} />
+          <ZonaStep onNext={(z, keys) => { if (keys) setStoreKeys(keys); setStep(2); }} />
         )}
         {step === 2 && (
-          <ListaStep
-            onBack={() => setStep(1)}
-            onNext={(text) => { setListText(text); setStep(3); }}
-          />
+          <ListaStep onBack={() => setStep(1)} onNext={(text) => { setListText(text); setStep(3); }} />
         )}
         {step === 3 && (
-          <ResultadosStep
-            listText={listText}
-            storeKeys={storeKeys}
-            onBack={() => setStep(2)}
-            onNext={(items) => { setCartItems(items); setStep(4); }}
-          />
+          <ResultadosStep listText={listText} storeKeys={storeKeys}
+            onBack={() => setStep(2)} onNext={(items) => { setCartItems(items); setStep(4); }} />
         )}
         {step === 4 && (
-          <ResumenStep
-            cartItems={cartItems}
-            onBack={() => setStep(3)}
-            onNext={() => setStep(5)}
-          />
+          <ResumenStep cartItems={cartItems} onBack={() => setStep(3)} onNext={() => setStep(5)} />
         )}
         {step === 5 && (
-          <AuthStep
-            onBack={() => setStep(4)}
-            onNext={(u) => { setUser(u); setStep(6); }}
-          />
+          <AuthStep onBack={() => setStep(4)} onNext={() => setStep(6)} />
         )}
         {step === 6 && opt && (
-          <DonacionStep
-            savings={opt.savings}
-            onNext={(t) => { setTip(t); setStep(7); }}
-          />
+          <DonacionStep savings={opt.savings} onNext={() => setStep(7)} />
         )}
         {step === 7 && opt && (
-          <RedirectStep storeBreakdown={opt.storeBreakdown} />
+          <RedirectStep cartItems={cartItems} storeBreakdown={opt.storeBreakdown} />
         )}
       </div>
     </>

@@ -270,6 +270,8 @@ async def compare_product(
     Compare a product across all stores.
     Returns the best match per store with price comparison.
     """
+    product_name = product_name.replace("+", " ")
+
     store_list = None
     if stores:
         store_list = [s.strip().lower() for s in stores.split(",")]

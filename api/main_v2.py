@@ -133,7 +133,7 @@ async def root():
         "version": "2.0.0",
         "status": "running",
         "uptime_seconds": int((datetime.now(timezone.utc) - _start_time).total_seconds()),
-        "stores": ["vea", "masonline", "modomarket", "coto"],
+        "stores": ["vea", "masonline", "jumbo", "disco", "hiperlibertad", "modomarket"],
         "endpoints": {
             "search": "/api/search?q=leche+entera",
             "compare": "/api/compare/leche+entera",
@@ -158,7 +158,7 @@ async def health():
 async def startup():
     logger.info("=" * 50)
     logger.info("SuperCompare API v2.0.0 starting...")
-    logger.info("Stores: Vea, MasOnline, ModoMarket, Coto Digital")
+    logger.info("Stores: Vea, MasOnline, Jumbo, Disco, Hiperlibertad, ModoMarket")
     logger.info("Mode: Real-time search (no cache)")
     logger.info("=" * 50)
 

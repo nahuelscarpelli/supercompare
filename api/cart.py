@@ -4,8 +4,6 @@ POST /api/cart/build
 
 Recibe los items seleccionados por el usuario (con external_id y store),
 crea los carritos en cada supermercado VTEX y devuelve las URLs de checkout.
-
-Coto queda pendiente (Oracle ATG, requiere session diferente).
 """
 import asyncio
 import httpx
@@ -26,6 +24,21 @@ VTEX_STORES = {
         "base_url": "https://www.masonline.com.ar",
         "checkout_url": "https://www.masonline.com.ar/checkout#/cart",
     },
+    "jumbo": {
+        "name": "Jumbo",
+        "base_url": "https://www.jumbo.com.ar",
+        "checkout_url": "https://www.jumbo.com.ar/checkout#/cart",
+    },
+    "disco": {
+        "name": "Disco",
+        "base_url": "https://www.disco.com.ar",
+        "checkout_url": "https://www.disco.com.ar/checkout#/cart",
+    },
+    "hiperlibertad": {
+        "name": "Hiperlibertad",
+        "base_url": "https://www.hiperlibertad.com.ar",
+        "checkout_url": "https://www.hiperlibertad.com.ar/checkout#/cart",
+    },
     "modomarket": {
         "name": "ModoMarket",
         "base_url": "https://www.modomarket.com",
@@ -42,7 +55,7 @@ HEADERS = {
 
 # ─── Modelos ──────────────────────────────────────────────────────────────────
 class CartItem(BaseModel):
-    store: str        # "vea" | "masonline" | "modomarket" | "coto"
+    store: str        # "vea" | "masonline" | "jumbo" | "disco" | "hiperlibertad" | "modomarket"
     external_id: str  # SKU ID del producto (viene del search)
     quantity: int = 1
     name: str = ""    # para mostrar en la respuesta
@@ -64,7 +77,6 @@ class StoreCart(BaseModel):
 class CartResponse(BaseModel):
     carts: list[StoreCart]
     total_stores: int
-    coto_items: list[CartItem]  # items de Coto para manejar por separado
 
 
 # ─── VTEX Cart API ────────────────────────────────────────────────────────────
@@ -177,42 +189,20 @@ async def build_carts(request: CartRequest):
     Ejemplo de request:
     {
         "items": [
-            {"store": "vea",       "external_id": "331927", "quantity": 1, "name": "Leche Serenísima"},
-            {"store": "masonline", "external_id": "160510", "quantity": 1, "name": "Leche Serenísima"},
-            {"store": "coto",      "external_id": "prod00015929", "quantity": 1, "name": "Leche Serenísima"}
+            {"store": "vea",   "external_id": "331927", "quantity": 1, "name": "Leche Serenísima"},
+            {"store": "jumbo", "external_id": "160510", "quantity": 1, "name": "Leche Serenísima"}
         ]
     }
     """
-    # Separar items por tienda
     by_store: dict[str, list[CartItem]] = {}
-    coto_items = []
-
     for item in request.items:
-        if item.store == "coto":
-            coto_items.append(item)  # Coto por separado (Oracle ATG)
-        elif item.store in VTEX_STORES:
+        if item.store in VTEX_STORES:
             by_store.setdefault(item.store, []).append(item)
 
-    # Crear carritos VTEX en paralelo
-    vtex_tasks = [
-        build_vtex_cart(store_key, items)
-        for store_key, items in by_store.items()
-    ]
-    carts = list(await asyncio.gather(*vtex_tasks))
-
-    # Si hay items de Coto, agregar una entrada con URL directa (sin carrito automático por ahora)
-    if coto_items:
-        carts.append(StoreCart(
-            store="coto",
-            store_name="Coto Digital",
-            checkout_url="https://www.cotodigital3.com.ar/sitios/cdigi/browse",
-            items_added=0,
-            items_failed=[item.name for item in coto_items],
-            success=False,
-        ))
+    tasks = [build_vtex_cart(store_key, items) for store_key, items in by_store.items()]
+    carts = list(await asyncio.gather(*tasks))
 
     return CartResponse(
         carts=carts,
         total_stores=len(carts),
-        coto_items=coto_items,
     )

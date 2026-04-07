@@ -1,13 +1,15 @@
 """
-SuperCompare - Scrapers para Supermercados de Mendoza (v3 FINAL)
-================================================================
-TODOS los endpoints confirmados en vivo 2026-02-17. Sin Playwright.
+SuperCompare - Scrapers VTEX Argentina (v4)
+============================================
+Todos los endpoints confirmados en vivo. Sin Playwright.
 
 STATUS:
   ✅ Vea          → VTEX Intelligent Search API
   ✅ MasOnline    → VTEX Intelligent Search API
+  ✅ Jumbo        → VTEX Intelligent Search API
+  ✅ Disco        → VTEX Intelligent Search API
+  ✅ Hiperlibertad→ VTEX Intelligent Search API
   ✅ ModoMarket   → VTEX Catalog System (status 206 = OK)
-  ✅ Coto Digital → Oracle ATG Endeca JSON API (format=json)
 
 Requisitos:
     pip install httpx
@@ -136,9 +138,24 @@ class VTEXIntelligentSearchScraper:
             "color": "#D4213D",
         },
         "masonline": {
-            "name": "MasOnline (ChangoMAS)",
+            "name": "MasOnline",
             "base_url": "https://www.masonline.com.ar",
             "color": "#00529B",
+        },
+        "jumbo": {
+            "name": "Jumbo",
+            "base_url": "https://www.jumbo.com.ar",
+            "color": "#E3051B",
+        },
+        "disco": {
+            "name": "Disco",
+            "base_url": "https://www.disco.com.ar",
+            "color": "#008C45",
+        },
+        "hiperlibertad": {
+            "name": "Hiperlibertad",
+            "base_url": "https://www.hiperlibertad.com.ar",
+            "color": "#FFC107",
         },
     }
 
@@ -439,10 +456,9 @@ class VTEXCatalogScraper:
 
 
 # ============================================
-# 3. Coto Digital Scraper (Oracle ATG Endeca)
-#    Sin Playwright — usa format=json
+# 3. (Removido) Coto Digital — Oracle ATG Endeca, no VTEX
 # ============================================
-class CotoDigitalScraper:
+class _CotoDigitalScraper_DEPRECATED:
     """
     Coto Digital — Oracle ATG Commerce + Endeca Search.
     
@@ -691,29 +707,32 @@ class CotoDigitalScraper:
 # ============================================
 # Multi-store search
 # ============================================
-async def search_mendoza(
+ALL_STORES = list(VTEXIntelligentSearchScraper.STORES.keys()) + ["modomarket"]
+
+
+async def search_vtex(
     query: str,
     stores: Optional[list[str]] = None,
     max_per_store: int = 20,
 ) -> dict[str, list[ScrapedProduct]]:
     """
-    Busca en supermercados de Mendoza. Todo con HTTP puro, sin Playwright.
-    
+    Busca en supermercados VTEX de Argentina. HTTP puro, sin Playwright.
+
     Args:
         query: Término de búsqueda (ej: "leche entera")
         stores: Lista de tiendas. Default: todas.
-                Opciones: ["vea", "masonline", "modomarket", "coto"]
+                Opciones: ["vea", "masonline", "jumbo", "disco", "hiperlibertad", "modomarket"]
         max_per_store: Máximo resultados por tienda
-    
+
     Returns:
         Dict {store_code: [ScrapedProduct, ...]}
     """
     if stores is None:
-        stores = ["vea", "masonline", "modomarket", "coto"]
+        stores = ALL_STORES
 
     results = {}
 
-    # ── VTEX Intelligent Search: Vea, MasOnline (concurrent) ──
+    # ── VTEX Intelligent Search: Vea, MasOnline, Jumbo, Disco, Hiperlibertad ──
     is_stores = [s for s in stores if s in VTEXIntelligentSearchScraper.STORES]
 
     async def _search_is(code):
@@ -725,21 +744,10 @@ async def search_mendoza(
         async with VTEXCatalogScraper(code) as scraper:
             return code, await scraper.search(query, max_per_store)
 
-    # ── Coto ──
-    async def _search_coto():
-        async with CotoDigitalScraper() as scraper:
-            return "coto", await scraper.search(query, max_per_store)
-
-    # Build tasks
-    tasks = []
-    for s in is_stores:
-        tasks.append(_search_is(s))
+    tasks = [_search_is(s) for s in is_stores]
     if "modomarket" in stores:
         tasks.append(_search_catalog("modomarket"))
-    if "coto" in stores:
-        tasks.append(_search_coto())
 
-    # Run all concurrently
     task_results = await asyncio.gather(*tasks, return_exceptions=True)
 
     for r in task_results:
@@ -750,6 +758,10 @@ async def search_mendoza(
             results[code] = products
 
     return results
+
+
+# Alias para compatibilidad
+search_mendoza = search_vtex
 
 
 # ============================================

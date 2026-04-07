@@ -22,9 +22,8 @@ from pydantic import BaseModel
 from scrapers.mendoza import (
     VTEXIntelligentSearchScraper,
     VTEXCatalogScraper,
-    CotoDigitalScraper,
     ScrapedProduct,
-    search_mendoza,
+    search_vtex,
 )
 
 logger = logging.getLogger(__name__)
@@ -87,24 +86,36 @@ STORE_REGISTRY = {
         "name": "Vea",
         "color": "#D4213D",
         "platform": "VTEX Intelligent Search",
-        "zone": "mendoza",
+        "zone": "nacional",
     },
     "masonline": {
         "name": "MasOnline",
         "color": "#00529B",
         "platform": "VTEX Intelligent Search",
-        "zone": "mendoza",
+        "zone": "nacional",
+    },
+    "jumbo": {
+        "name": "Jumbo",
+        "color": "#E3051B",
+        "platform": "VTEX Intelligent Search",
+        "zone": "nacional",
+    },
+    "disco": {
+        "name": "Disco",
+        "color": "#008C45",
+        "platform": "VTEX Intelligent Search",
+        "zone": "nacional",
+    },
+    "hiperlibertad": {
+        "name": "Hiperlibertad",
+        "color": "#FFC107",
+        "platform": "VTEX Intelligent Search",
+        "zone": "interior",
     },
     "modomarket": {
         "name": "ModoMarket",
         "color": "#FF6B00",
         "platform": "VTEX Catalog System",
-        "zone": "mendoza",
-    },
-    "coto": {
-        "name": "Coto Digital",
-        "color": "#E2001A",
-        "platform": "Oracle ATG Endeca",
         "zone": "mendoza",
     },
 }
@@ -171,7 +182,7 @@ async def search_products(
 
     # Execute concurrent search
     try:
-        raw_results = await search_mendoza(
+        raw_results = await search_vtex(
             query=q,
             stores=store_list,
             max_per_store=limit,
@@ -227,8 +238,8 @@ async def get_suggestions(
     store: str = Query("vea", description="Store for suggestions"),
 ):
     """Get autocomplete suggestions from a VTEX store."""
-    if store not in ("vea", "masonline"):
-        raise HTTPException(400, "Suggestions only available for vea, masonline")
+    if store not in VTEXIntelligentSearchScraper.STORES:
+        raise HTTPException(400, f"Suggestions only available for: {list(VTEXIntelligentSearchScraper.STORES.keys())}")
 
     try:
         async with VTEXIntelligentSearchScraper(store) as scraper:
@@ -276,7 +287,7 @@ async def compare_product(
     if stores:
         store_list = [s.strip().lower() for s in stores.split(",")]
 
-    raw_results = await search_mendoza(
+    raw_results = await search_vtex(
         query=product_name,
         stores=store_list,
         max_per_store=limit,

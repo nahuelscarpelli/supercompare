@@ -12,13 +12,7 @@ Endpoints:
     GET  /api/search/suggestions    → Autocomplete suggestions
     GET  /api/compare/leche+entera  → Compare across stores
     GET  /api/stores                → List available stores
-    GET  /api/stats                 → System stats
     POST /api/cart/build            → Build carts for selected items
-
-Auth (from auth module):
-    POST /auth/register
-    POST /auth/login
-    POST /auth/refresh
 """
 
 import logging
@@ -101,14 +95,6 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 # Search & comparison
 app.include_router(search_router)
-
-# Auth (import conditionally — may not be set up yet)
-try:
-    from auth.routes import router as auth_router
-    app.include_router(auth_router, tags=["auth"])
-    logger.info("Auth router loaded")
-except ImportError:
-    logger.warning("Auth module not found — running without auth")
 
 # Cart builder
 try:

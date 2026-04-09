@@ -184,10 +184,44 @@ async def attach_marketing_data(
         return False
 
 
+# Cencosud stores require branch selection before items can be added via API (ORD027).
+# Instead, we build a direct /checkout/cart/add URL which lets the browser session
+# handle the branch selection naturally at checkout time.
+CENCOSUD_STORES = {"vea", "jumbo", "disco"}
+
+
+def build_cencosud_cart_url(base_url: str, items: list[CartItem]) -> str:
+    """
+    Construye una URL directa de 'agregar al carrito' para stores Cencosud.
+    El formato VTEX permite pasar múltiples SKUs via query params repetidos.
+    El usuario selecciona su sucursal al llegar al checkout y los items ya están listos.
+    """
+    params = []
+    for item in items:
+        params.append(f"sku={item.external_id}&qty={item.quantity}&seller=1")
+    items_qs = "&".join(params)
+    utm = "utm_source=ahorrAR&utm_medium=price-comparison&utm_campaign=cart-builder"
+    return f"{base_url}/checkout/cart/add?{items_qs}&{utm}"
+
+
 async def build_vtex_cart(store_key: str, items: list[CartItem]) -> StoreCart:
     """Crea un carrito completo para una tienda VTEX con tracking de referido."""
     config = VTEX_STORES[store_key]
     base_url = config["base_url"]
+
+    # ── Cencosud (Vea, Jumbo, Disco): usar URL directa, sin orderForm API ──────
+    # La API de checkout de Cencosud requiere sucursal seleccionada (ORD027).
+    # La URL /checkout/cart/add permite al browser manejar el flujo naturalmente.
+    if store_key in CENCOSUD_STORES:
+        checkout_url = build_cencosud_cart_url(base_url, items)
+        return StoreCart(
+            store=store_key,
+            store_name=config["name"],
+            checkout_url=checkout_url,
+            items_added=len(items),   # optimista: el usuario confirma al elegir sucursal
+            items_failed=[],
+            success=True,
+        )
 
     async with httpx.AsyncClient(follow_redirects=True) as client:
         # 1. Crear orderForm
@@ -209,26 +243,20 @@ async def build_vtex_cart(store_key: str, items: list[CartItem]) -> StoreCart:
         # 3. Adjuntar datos de marketing/referido (no bloqueante si falla)
         await attach_marketing_data(client, base_url, order_form_id)
 
-        # 4. URL de checkout con UTM params para doble tracking
-        # Para stores que requieren sucursal (Cencosud: Vea, Jumbo, Disco), el orderFormId
-        # es válido pero los items se confirman cuando el usuario elige la sucursal.
+        # 4. URL de checkout con UTM params
         checkout_url = (
             f"{base_url}/checkout?orderFormId={order_form_id}"
-            f"&utm_source=supercompare&utm_medium=price-comparison&utm_campaign=cart-builder"
+            f"&utm_source=ahorrAR&utm_medium=price-comparison&utm_campaign=cart-builder"
             f"#/cart"
         )
-
-        # En stores con sucursal requerida, mostramos éxito parcial:
-        # el carrito fue creado y el usuario podrá agregar los items al elegir sucursal.
-        success = added > 0 or needs_branch
 
         return StoreCart(
             store=store_key,
             store_name=config["name"],
             checkout_url=checkout_url,
             items_added=added,
-            items_failed=failed if not needs_branch else [],
-            success=success,
+            items_failed=failed,
+            success=added > 0,
         )
 
 

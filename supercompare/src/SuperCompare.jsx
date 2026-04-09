@@ -631,21 +631,24 @@ const css = `
   }
 
   /* Brand × Store table */
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -4px; }
   .brand-table {
     width: 100%;
+    min-width: 420px;
     border-collapse: separate;
     border-spacing: 0;
     margin-bottom: 12px;
     font-size: 12px;
   }
   .brand-table th {
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: .4px;
+    letter-spacing: .3px;
     color: var(--text2);
-    padding: 0 6px 8px;
+    padding: 0 4px 8px;
     text-align: center;
+    white-space: nowrap;
   }
   .brand-table th.brand-col { text-align: left; padding-left: 0; }
   .brand-table td { padding: 3px; }
@@ -1466,12 +1469,16 @@ function ProductCard({ product, storeKeys, selection, onSelect, onRemove }) {
         </div>
       )}
 
+      <div className="table-scroll">
       <table className="brand-table">
         <thead>
           <tr>
             <th className="brand-col">Marca</th>
             {storeKeys.map(s => (
-              <th key={s}>{STORES[s].name}</th>
+              <th key={s} title={STORES[s].name}>
+                <div>{STORES[s].logo}</div>
+                <div>{STORES[s].name.replace("Online","").replace("Market","").replace("libertad","lib.").trim()}</div>
+              </th>
             ))}
           </tr>
         </thead>
@@ -1508,6 +1515,7 @@ function ProductCard({ product, storeKeys, selection, onSelect, onRemove }) {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -1783,7 +1791,7 @@ function ResumenStep({ cartItems, onNext, onBack }) {
 }
 
 // ── Step 5: Redirect (con carrito VTEX real) ─────────────────────────────────
-function RedirectStep({ storeBreakdown }) {
+function RedirectStep({ storeBreakdown, onBack }) {
   const [cartStatus, setCartStatus] = useState({});   // store → { loading, url, error, items_added }
   const [building, setBuilding] = useState(false);
 
@@ -1859,6 +1867,7 @@ function RedirectStep({ storeBreakdown }) {
 
   return (
     <div className="screen">
+      <button className="back-btn" onClick={onBack}>← Volver al resumen</button>
       <div className="confetti">🛒</div>
       <h1 className="screen-title" style={{ textAlign: "center" }}>
         {building ? "Armando tus carritos..." : "Carritos listos"}
@@ -1987,7 +1996,7 @@ export default function SuperCompare() {
             />
           )}
           {step === 5 && opt && (
-            <RedirectStep storeBreakdown={opt.storeBreakdown} />
+            <RedirectStep storeBreakdown={opt.storeBreakdown} onBack={() => setStep(4)} />
           )}
         </div>
 

@@ -4,6 +4,9 @@ POST /api/cart/build
 
 Recibe los items seleccionados por el usuario (con external_id y store),
 crea los carritos en cada supermercado VTEX y devuelve las URLs de checkout.
+
+Incluye marketingData (utmSource/utmCampaign) para tracking de referidos
+y futura monetización por comisiones.
 """
 import asyncio
 import httpx
@@ -46,6 +49,18 @@ VTEX_STORES = {
     },
 }
 
+# ─── Marketing/Referido config ───────────────────────────────────────────────
+MARKETING_DATA = {
+    "utmSource": "supercompare",
+    "utmMedium": "price-comparison",
+    "utmCampaign": "cart-builder",
+    "marketingTags": ["supercompare", "price-comparison"],
+    "utmiPage": "",
+    "utmiPart": "supercompare",
+    "utmiCampaign": "",
+    "coupon": "",
+}
+
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Accept": "application/json",
@@ -81,10 +96,7 @@ class CartResponse(BaseModel):
 
 # ─── VTEX Cart API ────────────────────────────────────────────────────────────
 async def create_vtex_orderform(client: httpx.AsyncClient, base_url: str) -> str | None:
-    """
-    Crea un nuevo orderForm (sesión de carrito) en VTEX.
-    Devuelve el orderFormId o None si falla.
-    """
+    """Crea un nuevo orderForm (sesión de carrito) en VTEX."""
     try:
         resp = await client.get(
             f"{base_url}/api/checkout/pub/orderForm",
@@ -104,13 +116,15 @@ async def add_items_to_vtex_cart(
     base_url: str,
     order_form_id: str,
     items: list[CartItem],
-) -> tuple[int, list[str]]:
+) -> tuple[int, list[str], bool]:
     """
     Agrega items al carrito VTEX.
-    Devuelve (cantidad_agregada, lista_de_fallos).
+    Devuelve (cantidad_agregada, lista_de_fallos, requiere_sucursal).
+    requiere_sucursal=True cuando el store necesita que el usuario elija sucursal primero (ORD027).
     """
     added = 0
     failed = []
+    needs_branch = False
 
     vtex_items = [
         {"id": item.external_id, "quantity": item.quantity, "seller": "1"}
@@ -128,24 +142,50 @@ async def add_items_to_vtex_cart(
             data = resp.json()
             cart_items = data.get("items", [])
             added = len(cart_items)
-            # Detectar items que no se agregaron
-            added_ids = {str(i.get("id")) for i in cart_items}
-            for item in items:
-                if item.external_id not in added_ids:
-                    failed.append(item.name or item.external_id)
+            messages = data.get("messages", [])
+            # ORD027 = el store requiere sucursal seleccionada (Cencosud: Vea, Jumbo, Disco)
+            needs_branch = any(m.get("code") == "ORD027" for m in messages)
+            if needs_branch:
+                failed = [item.name or item.external_id for item in items]
+            else:
+                added_ids = {str(i.get("id")) for i in cart_items}
+                for item in items:
+                    if item.external_id not in added_ids:
+                        failed.append(item.name or item.external_id)
         else:
             failed = [item.name or item.external_id for item in items]
     except Exception as e:
         print(f"[cart] Error agregando items a {base_url}: {e}")
         failed = [item.name or item.external_id for item in items]
 
-    return added, failed
+    return added, failed, needs_branch
+
+
+async def attach_marketing_data(
+    client: httpx.AsyncClient,
+    base_url: str,
+    order_form_id: str,
+) -> bool:
+    """
+    Adjunta datos de marketing/referido al carrito VTEX.
+    Esto permite que el supermercado vea que la venta vino de SuperCompare
+    y es la base para negociar comisiones por referido.
+    """
+    try:
+        resp = await client.post(
+            f"{base_url}/api/checkout/pub/orderForm/{order_form_id}/attachments/marketingData",
+            headers={**HEADERS, "Referer": base_url},
+            json=MARKETING_DATA,
+            timeout=10,
+        )
+        return resp.status_code in (200, 201)
+    except Exception as e:
+        print(f"[cart] Error adjuntando marketingData en {base_url}: {e}")
+        return False
 
 
 async def build_vtex_cart(store_key: str, items: list[CartItem]) -> StoreCart:
-    """
-    Crea un carrito completo para una tienda VTEX.
-    """
+    """Crea un carrito completo para una tienda VTEX con tracking de referido."""
     config = VTEX_STORES[store_key]
     base_url = config["base_url"]
 
@@ -163,19 +203,32 @@ async def build_vtex_cart(store_key: str, items: list[CartItem]) -> StoreCart:
                 success=False,
             )
 
-        # 2. Agregar items
-        added, failed = await add_items_to_vtex_cart(client, base_url, order_form_id, items)
+        # 2. Agregar items al carrito
+        added, failed, needs_branch = await add_items_to_vtex_cart(client, base_url, order_form_id, items)
 
-        # 3. URL de checkout con el orderForm activo
-        checkout_url = f"{base_url}/checkout?orderFormId={order_form_id}#/cart"
+        # 3. Adjuntar datos de marketing/referido (no bloqueante si falla)
+        await attach_marketing_data(client, base_url, order_form_id)
+
+        # 4. URL de checkout con UTM params para doble tracking
+        # Para stores que requieren sucursal (Cencosud: Vea, Jumbo, Disco), el orderFormId
+        # es válido pero los items se confirman cuando el usuario elige la sucursal.
+        checkout_url = (
+            f"{base_url}/checkout?orderFormId={order_form_id}"
+            f"&utm_source=supercompare&utm_medium=price-comparison&utm_campaign=cart-builder"
+            f"#/cart"
+        )
+
+        # En stores con sucursal requerida, mostramos éxito parcial:
+        # el carrito fue creado y el usuario podrá agregar los items al elegir sucursal.
+        success = added > 0 or needs_branch
 
         return StoreCart(
             store=store_key,
             store_name=config["name"],
             checkout_url=checkout_url,
             items_added=added,
-            items_failed=failed,
-            success=added > 0,
+            items_failed=failed if not needs_branch else [],
+            success=success,
         )
 
 
@@ -186,13 +239,10 @@ async def build_carts(request: CartRequest):
     Recibe la lista de items seleccionados (cada uno con su store y external_id),
     agrupa por tienda, crea los carritos en paralelo y devuelve las URLs.
 
-    Ejemplo de request:
-    {
-        "items": [
-            {"store": "vea",   "external_id": "331927", "quantity": 1, "name": "Leche Serenísima"},
-            {"store": "jumbo", "external_id": "160510", "quantity": 1, "name": "Leche Serenísima"}
-        ]
-    }
+    Cada carrito incluye:
+    - Los productos cargados via VTEX Checkout API
+    - marketingData con utmSource=supercompare para tracking de referidos
+    - URL de checkout con UTM params
     """
     by_store: dict[str, list[CartItem]] = {}
     for item in request.items:

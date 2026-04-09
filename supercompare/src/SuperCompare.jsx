@@ -182,11 +182,12 @@ function buildProductFromResults(searchTerm, apiResults, storeKeys, id, subcatFi
       const url   = p.product_url || STORES[frontKey].url;
 
       if (!brandMap[normKey]) {
-        brandMap[normKey] = { displayName, unit: unitLabel, prices: {}, urls: {} };
+        brandMap[normKey] = { displayName, unit: unitLabel, prices: {}, urls: {}, externalIds: {} };
       }
       if (!brandMap[normKey].prices[frontKey] || price < brandMap[normKey].prices[frontKey]) {
         brandMap[normKey].prices[frontKey] = price;
         brandMap[normKey].urls[frontKey]   = url;
+        brandMap[normKey].externalIds[frontKey] = p.external_id || "";
       }
     });
   });
@@ -196,6 +197,7 @@ function buildProductFromResults(searchTerm, apiResults, storeKeys, id, subcatFi
     unit:   data.unit,
     prices: Object.fromEntries(storeKeys.map(s => [s, data.prices[s] ?? null])),
     urls:   data.urls,
+    externalIds: data.externalIds,
   }));
 
   // Marcas presentes en más súpers primero
@@ -244,10 +246,12 @@ async function login(email, password) {
 
 // ─── STORES CONFIG ────────────────────────────────────────────────────────────
 const STORES = {
-  vea:      { name: "Vea",         color: "#E31837", bg: "#FFF0F2", logo: "🔴", url: "https://www.vea.com.ar",           backKey: "vea"        },
-  mas:      { name: "MasOnline",   color: "#FF6B00", bg: "#FFF4EE", logo: "🟠", url: "https://www.masonline.com.ar",     backKey: "masonline"  },
-  coto:     { name: "Coto",        color: "#007DC5", bg: "#EEF6FF", logo: "🔵", url: "https://www.cotodigital.com.ar",   backKey: "coto"       },
-  modo:     { name: "ModoMarket",  color: "#6B3FA0", bg: "#F5EEFF", logo: "🟣", url: "https://www.modomarket.com",       backKey: "modomarket" },
+  vea:      { name: "Vea",           color: "#D4213D", bg: "#FFF0F2", logo: "🔴", url: "https://www.vea.com.ar",           backKey: "vea"            },
+  mas:      { name: "MasOnline",     color: "#00529B", bg: "#EEF6FF", logo: "🔵", url: "https://www.masonline.com.ar",     backKey: "masonline"      },
+  jumbo:    { name: "Jumbo",         color: "#E3051B", bg: "#FFF0F0", logo: "🟥", url: "https://www.jumbo.com.ar",         backKey: "jumbo"          },
+  disco:    { name: "Disco",         color: "#008C45", bg: "#EEFFF4", logo: "🟢", url: "https://www.disco.com.ar",         backKey: "disco"          },
+  hiper:    { name: "Hiperlibertad", color: "#FFC107", bg: "#FFF9E6", logo: "🟡", url: "https://www.hiperlibertad.com.ar", backKey: "hiperlibertad"   },
+  modo:     { name: "ModoMarket",    color: "#6B3FA0", bg: "#F5EEFF", logo: "🟣", url: "https://www.modomarket.com",       backKey: "modomarket"     },
 };
 
 // Mapeo inverso: backKey → frontKey
@@ -259,79 +263,79 @@ const BACK_TO_FRONT = Object.fromEntries(
 const MOCK_CATALOG = [
   { id: 1, name: "Leche entera", emoji: "🥛", keyword: ["leche"],
     brands: [
-      { brand: "La Serenísima", unit: "1L",   prices: { vea: 1290, mas: 1250, coto: 1310, modo: 1275 } },
-      { brand: "Sancor",        unit: "1L",   prices: { vea: 1180, mas: 1150, coto: 1200, modo: null  } },
-      { brand: "Atalact",       unit: "1L",   prices: { vea: null, mas:  980, coto: 1020, modo:  960  } },
+      { brand: "La Serenísima", unit: "1L",   prices: { vea: 1290, mas: 1250, jumbo: 1310, modo: 1275 } },
+      { brand: "Sancor",        unit: "1L",   prices: { vea: 1180, mas: 1150, jumbo: 1200, modo: null  } },
+      { brand: "Atalact",       unit: "1L",   prices: { vea: null, mas:  980, jumbo: 1020, modo:  960  } },
     ]},
   { id: 2, name: "Aceite girasol", emoji: "🫙", keyword: ["aceite"],
     brands: [
-      { brand: "Cocinero",  unit: "1.5L", prices: { vea: 3890, mas: 3750, coto: 3920, modo: 3800 } },
-      { brand: "Natura",    unit: "1.5L", prices: { vea: 3650, mas: 3580, coto: null,  modo: 3620 } },
+      { brand: "Cocinero",  unit: "1.5L", prices: { vea: 3890, mas: 3750, jumbo: 3920, modo: 3800 } },
+      { brand: "Natura",    unit: "1.5L", prices: { vea: 3650, mas: 3580, jumbo: null,  modo: 3620 } },
     ]},
   { id: 3, name: "Arroz", emoji: "🍚", keyword: ["arroz"],
     brands: [
-      { brand: "Gallo",    unit: "1kg", prices: { vea: 1690, mas: 1590, coto: 1750, modo: 1620 } },
-      { brand: "Lucchetti",unit: "1kg", prices: { vea: 1520, mas: 1480, coto: 1580, modo: null  } },
+      { brand: "Gallo",    unit: "1kg", prices: { vea: 1690, mas: 1590, jumbo: 1750, modo: 1620 } },
+      { brand: "Lucchetti",unit: "1kg", prices: { vea: 1520, mas: 1480, jumbo: 1580, modo: null  } },
     ]},
   { id: 4, name: "Fideos", emoji: "🍝", keyword: ["fideo", "pasta"],
     brands: [
-      { brand: "Matarazzo", unit: "500g", prices: { vea:  980, mas:  890, coto: 1020, modo:  950 } },
-      { brand: "Lucchetti", unit: "500g", prices: { vea:  920, mas:  870, coto:  960, modo:  880 } },
+      { brand: "Matarazzo", unit: "500g", prices: { vea:  980, mas:  890, jumbo: 1020, modo:  950 } },
+      { brand: "Lucchetti", unit: "500g", prices: { vea:  920, mas:  870, jumbo:  960, modo:  880 } },
     ]},
   { id: 5, name: "Yerba mate", emoji: "🧉", keyword: ["yerba"],
     brands: [
-      { brand: "Taragüí",   unit: "1kg", prices: { vea: 4250, mas: 4100, coto: 4380, modo: 4200 } },
-      { brand: "Amanda",    unit: "1kg", prices: { vea: 3980, mas: 3850, coto: 4100, modo: 3900 } },
+      { brand: "Taragüí",   unit: "1kg", prices: { vea: 4250, mas: 4100, jumbo: 4380, modo: 4200 } },
+      { brand: "Amanda",    unit: "1kg", prices: { vea: 3980, mas: 3850, jumbo: 4100, modo: 3900 } },
     ]},
   { id: 6, name: "Harina", emoji: "🌾", keyword: ["harina"],
     brands: [
-      { brand: "Pureza",   unit: "1kg", prices: { vea:  890, mas:  850, coto:  910, modo:  870 } },
-      { brand: "Cañuelas", unit: "1kg", prices: { vea:  820, mas:  790, coto:  840, modo: null  } },
+      { brand: "Pureza",   unit: "1kg", prices: { vea:  890, mas:  850, jumbo:  910, modo:  870 } },
+      { brand: "Cañuelas", unit: "1kg", prices: { vea:  820, mas:  790, jumbo:  840, modo: null  } },
     ]},
   { id: 7, name: "Azúcar", emoji: "🍬", keyword: ["azucar", "azúcar"],
     brands: [
-      { brand: "Ledesma",  unit: "1kg", prices: { vea: 1150, mas: 1080, coto: 1190, modo: 1120 } },
-      { brand: "Chango",   unit: "1kg", prices: { vea: 1050, mas:  990, coto: 1100, modo: 1020 } },
+      { brand: "Ledesma",  unit: "1kg", prices: { vea: 1150, mas: 1080, jumbo: 1190, modo: 1120 } },
+      { brand: "Chango",   unit: "1kg", prices: { vea: 1050, mas:  990, jumbo: 1100, modo: 1020 } },
     ]},
   { id: 8, name: "Huevos", emoji: "🥚", keyword: ["huevo", "huevos"],
     brands: [
-      { brand: "Granja del Sol", unit: "x12", prices: { vea: 2890, mas: 2750, coto: 2950, modo: 2800 } },
-      { brand: "La Campagnola",  unit: "x12", prices: { vea: 2650, mas: 2580, coto: null,  modo: 2620 } },
+      { brand: "Granja del Sol", unit: "x12", prices: { vea: 2890, mas: 2750, jumbo: 2950, modo: 2800 } },
+      { brand: "La Campagnola",  unit: "x12", prices: { vea: 2650, mas: 2580, jumbo: null,  modo: 2620 } },
     ]},
   { id: 9, name: "Cerveza", emoji: "🍺", keyword: ["cerveza"],
     brands: [
-      { brand: "Quilmes",  unit: "1L",   prices: { vea: 2100, mas: 1980, coto: 2200, modo: 2050 } },
-      { brand: "Brahma",   unit: "1L",   prices: { vea: 1850, mas: 1790, coto: 1920, modo: 1830 } },
+      { brand: "Quilmes",  unit: "1L",   prices: { vea: 2100, mas: 1980, jumbo: 2200, modo: 2050 } },
+      { brand: "Brahma",   unit: "1L",   prices: { vea: 1850, mas: 1790, jumbo: 1920, modo: 1830 } },
     ]},
   { id: 10, name: "Pan lactal", emoji: "🍞", keyword: ["pan", "lactal"],
     brands: [
-      { brand: "Bimbo", unit: "500g", prices: { vea: 1450, mas: 1380, coto: 1500, modo: 1420 } },
-      { brand: "Fargo", unit: "500g", prices: { vea: 1320, mas: 1280, coto: 1380, modo: null  } },
+      { brand: "Bimbo", unit: "500g", prices: { vea: 1450, mas: 1380, jumbo: 1500, modo: 1420 } },
+      { brand: "Fargo", unit: "500g", prices: { vea: 1320, mas: 1280, jumbo: 1380, modo: null  } },
     ]},
   { id: 11, name: "Queso cremoso", emoji: "🧀", keyword: ["queso"],
     brands: [
-      { brand: "La Serenísima", unit: "400g", prices: { vea: 3200, mas: 3050, coto: 3350, modo: 3100 } },
-      { brand: "Tregar",        unit: "400g", prices: { vea: 2750, mas: null,  coto: 2900, modo: 2800 } },
+      { brand: "La Serenísima", unit: "400g", prices: { vea: 3200, mas: 3050, jumbo: 3350, modo: 3100 } },
+      { brand: "Tregar",        unit: "400g", prices: { vea: 2750, mas: null,  jumbo: 2900, modo: 2800 } },
     ]},
   { id: 12, name: "Detergente", emoji: "🧴", keyword: ["detergente"],
     brands: [
-      { brand: "Magistral", unit: "750ml", prices: { vea: 1890, mas: 1750, coto: 1950, modo: 1810 } },
-      { brand: "Ala",       unit: "750ml", prices: { vea: 1650, mas: 1580, coto: 1720, modo: null  } },
+      { brand: "Magistral", unit: "750ml", prices: { vea: 1890, mas: 1750, jumbo: 1950, modo: 1810 } },
+      { brand: "Ala",       unit: "750ml", prices: { vea: 1650, mas: 1580, jumbo: 1720, modo: null  } },
     ]},
   { id: 13, name: "Papel higiénico", emoji: "🧻", keyword: ["papel", "higienico"],
     brands: [
-      { brand: "Higienol", unit: "x4", prices: { vea: 1650, mas: 1580, coto: 1700, modo: 1620 } },
-      { brand: "Elite",    unit: "x4", prices: { vea: 1450, mas: 1390, coto: 1500, modo: null  } },
+      { brand: "Higienol", unit: "x4", prices: { vea: 1650, mas: 1580, jumbo: 1700, modo: 1620 } },
+      { brand: "Elite",    unit: "x4", prices: { vea: 1450, mas: 1390, jumbo: 1500, modo: null  } },
     ]},
   { id: 14, name: "Tomate triturado", emoji: "🍅", keyword: ["tomate"],
     brands: [
-      { brand: "Arcor",         unit: "400g", prices: { vea:  780, mas:  720, coto:  800, modo:  750 } },
-      { brand: "La Campagnola", unit: "400g", prices: { vea:  720, mas:  680, coto:  740, modo: null  } },
+      { brand: "Arcor",         unit: "400g", prices: { vea:  780, mas:  720, jumbo:  800, modo:  750 } },
+      { brand: "La Campagnola", unit: "400g", prices: { vea:  720, mas:  680, jumbo:  740, modo: null  } },
     ]},
   { id: 15, name: "Atún", emoji: "🐟", keyword: ["atun", "atún"],
     brands: [
-      { brand: "La Campagnola", unit: "170g", prices: { vea: 1100, mas: 1020, coto: 1150, modo: 1060 } },
-      { brand: "Alka",          unit: "170g", prices: { vea:  980, mas:  920, coto: 1010, modo: null  } },
+      { brand: "La Campagnola", unit: "170g", prices: { vea: 1100, mas: 1020, jumbo: 1150, modo: 1060 } },
+      { brand: "Alka",          unit: "170g", prices: { vea:  980, mas:  920, jumbo: 1010, modo: null  } },
     ]},
 ];
 
@@ -339,92 +343,92 @@ const MOCK_CATALOG = [
 const CATALOG = [
   { id: 1, name: "Leche entera", emoji: "🥛", keyword: ["leche"],
     brands: [
-      { brand: "La Serenísima", unit: "1L",   prices: { vea: 1290, mas: 1250, coto: 1310, modo: 1275 } },
-      { brand: "Sancor",        unit: "1L",   prices: { vea: 1180, mas: 1150, coto: 1200, modo: null  } },
-      { brand: "Atalact",       unit: "1L",   prices: { vea: null, mas:  980, coto: 1020, modo:  960  } },
+      { brand: "La Serenísima", unit: "1L",   prices: { vea: 1290, mas: 1250, jumbo: 1310, modo: 1275 } },
+      { brand: "Sancor",        unit: "1L",   prices: { vea: 1180, mas: 1150, jumbo: 1200, modo: null  } },
+      { brand: "Atalact",       unit: "1L",   prices: { vea: null, mas:  980, jumbo: 1020, modo:  960  } },
     ]},
   { id: 2, name: "Aceite girasol", emoji: "🫙", keyword: ["aceite"],
     brands: [
-      { brand: "Cocinero",  unit: "1.5L", prices: { vea: 3890, mas: 3750, coto: 3920, modo: 3800 } },
-      { brand: "Natura",    unit: "1.5L", prices: { vea: 3650, mas: 3580, coto: null,  modo: 3620 } },
-      { brand: "Ideal",     unit: "1L",   prices: { vea: 2490, mas: 2390, coto: 2550, modo: null  } },
+      { brand: "Cocinero",  unit: "1.5L", prices: { vea: 3890, mas: 3750, jumbo: 3920, modo: 3800 } },
+      { brand: "Natura",    unit: "1.5L", prices: { vea: 3650, mas: 3580, jumbo: null,  modo: 3620 } },
+      { brand: "Ideal",     unit: "1L",   prices: { vea: 2490, mas: 2390, jumbo: 2550, modo: null  } },
     ]},
   { id: 3, name: "Arroz", emoji: "🍚", keyword: ["arroz"],
     brands: [
-      { brand: "Gallo",    unit: "1kg", prices: { vea: 1690, mas: 1590, coto: 1750, modo: 1620 } },
-      { brand: "Lucchetti",unit: "1kg", prices: { vea: 1520, mas: 1480, coto: 1580, modo: null  } },
-      { brand: "Dos Anclas",unit:"1kg", prices: { vea: null, mas: 1350, coto: 1420, modo: 1380 } },
+      { brand: "Gallo",    unit: "1kg", prices: { vea: 1690, mas: 1590, jumbo: 1750, modo: 1620 } },
+      { brand: "Lucchetti",unit: "1kg", prices: { vea: 1520, mas: 1480, jumbo: 1580, modo: null  } },
+      { brand: "Dos Anclas",unit:"1kg", prices: { vea: null, mas: 1350, jumbo: 1420, modo: 1380 } },
     ]},
   { id: 4, name: "Fideos", emoji: "🍝", keyword: ["fideo", "pasta", "spaghetti"],
     brands: [
-      { brand: "Matarazzo", unit: "500g", prices: { vea:  980, mas:  890, coto: 1020, modo:  950 } },
-      { brand: "Lucchetti", unit: "500g", prices: { vea:  920, mas:  870, coto:  960, modo:  880 } },
-      { brand: "Don Felipe", unit:"500g", prices: { vea: null, mas:  780, coto:  820, modo:  800 } },
+      { brand: "Matarazzo", unit: "500g", prices: { vea:  980, mas:  890, jumbo: 1020, modo:  950 } },
+      { brand: "Lucchetti", unit: "500g", prices: { vea:  920, mas:  870, jumbo:  960, modo:  880 } },
+      { brand: "Don Felipe", unit:"500g", prices: { vea: null, mas:  780, jumbo:  820, modo:  800 } },
     ]},
   { id: 5, name: "Yerba mate", emoji: "🧉", keyword: ["yerba"],
     brands: [
-      { brand: "Taragüí",   unit: "1kg", prices: { vea: 4250, mas: 4100, coto: 4380, modo: 4200 } },
-      { brand: "Amanda",    unit: "1kg", prices: { vea: 3980, mas: 3850, coto: 4100, modo: 3900 } },
-      { brand: "Rosamonte", unit: "1kg", prices: { vea: 3750, mas: null,  coto: 3900, modo: 3780 } },
+      { brand: "Taragüí",   unit: "1kg", prices: { vea: 4250, mas: 4100, jumbo: 4380, modo: 4200 } },
+      { brand: "Amanda",    unit: "1kg", prices: { vea: 3980, mas: 3850, jumbo: 4100, modo: 3900 } },
+      { brand: "Rosamonte", unit: "1kg", prices: { vea: 3750, mas: null,  jumbo: 3900, modo: 3780 } },
     ]},
   { id: 6, name: "Harina", emoji: "🌾", keyword: ["harina"],
     brands: [
-      { brand: "Pureza",   unit: "1kg", prices: { vea:  890, mas:  850, coto:  910, modo:  870 } },
-      { brand: "Cañuelas", unit: "1kg", prices: { vea:  820, mas:  790, coto:  840, modo: null  } },
-      { brand: "Morixe",   unit: "1kg", prices: { vea: null, mas:  760, coto:  800, modo:  780 } },
+      { brand: "Pureza",   unit: "1kg", prices: { vea:  890, mas:  850, jumbo:  910, modo:  870 } },
+      { brand: "Cañuelas", unit: "1kg", prices: { vea:  820, mas:  790, jumbo:  840, modo: null  } },
+      { brand: "Morixe",   unit: "1kg", prices: { vea: null, mas:  760, jumbo:  800, modo:  780 } },
     ]},
   { id: 7, name: "Azúcar", emoji: "🍬", keyword: ["azucar", "azúcar"],
     brands: [
-      { brand: "Ledesma",  unit: "1kg", prices: { vea: 1150, mas: 1080, coto: 1190, modo: 1120 } },
-      { brand: "Chango",   unit: "1kg", prices: { vea: 1050, mas:  990, coto: 1100, modo: 1020 } },
+      { brand: "Ledesma",  unit: "1kg", prices: { vea: 1150, mas: 1080, jumbo: 1190, modo: 1120 } },
+      { brand: "Chango",   unit: "1kg", prices: { vea: 1050, mas:  990, jumbo: 1100, modo: 1020 } },
     ]},
   { id: 8, name: "Huevos", emoji: "🥚", keyword: ["huevo", "huevos"],
     brands: [
-      { brand: "Granja del Sol", unit: "x12", prices: { vea: 2890, mas: 2750, coto: 2950, modo: 2800 } },
-      { brand: "La Campagnola",  unit: "x12", prices: { vea: 2650, mas: 2580, coto: null,  modo: 2620 } },
-      { brand: "Marca blanca",   unit: "x12", prices: { vea: null, mas: 2400, coto: 2490, modo: null  } },
+      { brand: "Granja del Sol", unit: "x12", prices: { vea: 2890, mas: 2750, jumbo: 2950, modo: 2800 } },
+      { brand: "La Campagnola",  unit: "x12", prices: { vea: 2650, mas: 2580, jumbo: null,  modo: 2620 } },
+      { brand: "Marca blanca",   unit: "x12", prices: { vea: null, mas: 2400, jumbo: 2490, modo: null  } },
     ]},
   { id: 9, name: "Cerveza", emoji: "🍺", keyword: ["cerveza"],
     brands: [
-      { brand: "Quilmes",  unit: "1L",   prices: { vea: 2100, mas: 1980, coto: 2200, modo: 2050 } },
-      { brand: "Schneider",unit: "1L",   prices: { vea: 1950, mas: 1870, coto: 2020, modo: null  } },
-      { brand: "Brahma",   unit: "1L",   prices: { vea: 1850, mas: 1790, coto: 1920, modo: 1830 } },
+      { brand: "Quilmes",  unit: "1L",   prices: { vea: 2100, mas: 1980, jumbo: 2200, modo: 2050 } },
+      { brand: "Schneider",unit: "1L",   prices: { vea: 1950, mas: 1870, jumbo: 2020, modo: null  } },
+      { brand: "Brahma",   unit: "1L",   prices: { vea: 1850, mas: 1790, jumbo: 1920, modo: 1830 } },
     ]},
   { id: 10, name: "Pan lactal", emoji: "🍞", keyword: ["pan", "lactal"],
     brands: [
-      { brand: "Bimbo",     unit: "500g", prices: { vea: 1450, mas: 1380, coto: 1500, modo: 1420 } },
-      { brand: "Fargo",     unit: "500g", prices: { vea: 1320, mas: 1280, coto: 1380, modo: null  } },
-      { brand: "Silueta",   unit: "400g", prices: { vea: null, mas: 1150, coto: 1200, modo: 1160 } },
+      { brand: "Bimbo",     unit: "500g", prices: { vea: 1450, mas: 1380, jumbo: 1500, modo: 1420 } },
+      { brand: "Fargo",     unit: "500g", prices: { vea: 1320, mas: 1280, jumbo: 1380, modo: null  } },
+      { brand: "Silueta",   unit: "400g", prices: { vea: null, mas: 1150, jumbo: 1200, modo: 1160 } },
     ]},
   { id: 11, name: "Queso cremoso", emoji: "🧀", keyword: ["queso"],
     brands: [
-      { brand: "La Serenísima", unit: "400g", prices: { vea: 3200, mas: 3050, coto: 3350, modo: 3100 } },
-      { brand: "Sancor",        unit: "400g", prices: { vea: 2950, mas: 2880, coto: 3100, modo: null  } },
-      { brand: "Tregar",        unit: "400g", prices: { vea: 2750, mas: null,  coto: 2900, modo: 2800 } },
+      { brand: "La Serenísima", unit: "400g", prices: { vea: 3200, mas: 3050, jumbo: 3350, modo: 3100 } },
+      { brand: "Sancor",        unit: "400g", prices: { vea: 2950, mas: 2880, jumbo: 3100, modo: null  } },
+      { brand: "Tregar",        unit: "400g", prices: { vea: 2750, mas: null,  jumbo: 2900, modo: 2800 } },
     ]},
   { id: 12, name: "Detergente", emoji: "🧴", keyword: ["detergente"],
     brands: [
-      { brand: "Magistral", unit: "750ml", prices: { vea: 1890, mas: 1750, coto: 1950, modo: 1810 } },
-      { brand: "Ala",       unit: "750ml", prices: { vea: 1650, mas: 1580, coto: 1720, modo: null  } },
-      { brand: "Prima",     unit: "500ml", prices: { vea: null, mas: 1320, coto: 1390, modo: 1340 } },
+      { brand: "Magistral", unit: "750ml", prices: { vea: 1890, mas: 1750, jumbo: 1950, modo: 1810 } },
+      { brand: "Ala",       unit: "750ml", prices: { vea: 1650, mas: 1580, jumbo: 1720, modo: null  } },
+      { brand: "Prima",     unit: "500ml", prices: { vea: null, mas: 1320, jumbo: 1390, modo: 1340 } },
     ]},
   { id: 13, name: "Papel higiénico", emoji: "🧻", keyword: ["papel", "higienico", "higiénico"],
     brands: [
-      { brand: "Higienol",  unit: "x4", prices: { vea: 1650, mas: 1580, coto: 1700, modo: 1620 } },
-      { brand: "Elite",     unit: "x4", prices: { vea: 1450, mas: 1390, coto: 1500, modo: null  } },
-      { brand: "Familia",   unit: "x4", prices: { vea: null, mas: 1280, coto: 1340, modo: 1300 } },
+      { brand: "Higienol",  unit: "x4", prices: { vea: 1650, mas: 1580, jumbo: 1700, modo: 1620 } },
+      { brand: "Elite",     unit: "x4", prices: { vea: 1450, mas: 1390, jumbo: 1500, modo: null  } },
+      { brand: "Familia",   unit: "x4", prices: { vea: null, mas: 1280, jumbo: 1340, modo: 1300 } },
     ]},
   { id: 14, name: "Tomate triturado", emoji: "🍅", keyword: ["tomate"],
     brands: [
-      { brand: "Arcor",         unit: "400g", prices: { vea:  780, mas:  720, coto:  800, modo:  750 } },
-      { brand: "La Campagnola", unit: "400g", prices: { vea:  720, mas:  680, coto:  740, modo: null  } },
-      { brand: "Cica",          unit: "400g", prices: { vea: null, mas:  650, coto:  680, modo:  660 } },
+      { brand: "Arcor",         unit: "400g", prices: { vea:  780, mas:  720, jumbo:  800, modo:  750 } },
+      { brand: "La Campagnola", unit: "400g", prices: { vea:  720, mas:  680, jumbo:  740, modo: null  } },
+      { brand: "Cica",          unit: "400g", prices: { vea: null, mas:  650, jumbo:  680, modo:  660 } },
     ]},
   { id: 15, name: "Atún", emoji: "🐟", keyword: ["atun", "atún"],
     brands: [
-      { brand: "La Campagnola", unit: "170g", prices: { vea: 1100, mas: 1020, coto: 1150, modo: 1060 } },
-      { brand: "Alka",          unit: "170g", prices: { vea:  980, mas:  920, coto: 1010, modo: null  } },
-      { brand: "Cormoran",      unit: "170g", prices: { vea: null, mas:  870, coto:  910, modo:  890 } },
+      { brand: "La Campagnola", unit: "170g", prices: { vea: 1100, mas: 1020, jumbo: 1150, modo: 1060 } },
+      { brand: "Alka",          unit: "170g", prices: { vea:  980, mas:  920, jumbo: 1010, modo: null  } },
+      { brand: "Cormoran",      unit: "170g", prices: { vea: null, mas:  870, jumbo:  910, modo:  890 } },
     ]},
 ];
 
@@ -1304,7 +1308,7 @@ function ProductCard({ product, selection, onSelect, onRemove }) {
                     {price ? (
                       <div
                         className={`price-cell ${isGlobalMin ? "cheapest-all" : ""} ${isSelected ? "selected-cell" : ""}`}
-                        onClick={() => onSelect(bi, s, price)}
+                        onClick={() => onSelect(bi, s, price, brand.externalIds?.[s])}
                       >
                         {isGlobalMin && !isSelected && <div className="cheapest-badge">★ mejor</div>}
                         <div className="cell-price">{fmt(price)}</div>
@@ -1410,13 +1414,13 @@ function ResultadosStep({ listText, storeKeys, onNext, onBack }) {
     ])
   );
 
-  const select = (productId, brandIdx, store, price) => {
+  const select = (productId, brandIdx, store, price, externalId) => {
     setCart(prev => {
       const cur = prev[productId];
       if (cur?.brandIdx === brandIdx && cur?.store === store) {
         const n = { ...prev }; delete n[productId]; return n;
       }
-      return { ...prev, [productId]: { brandIdx, store, price } };
+      return { ...prev, [productId]: { brandIdx, store, price, externalId } };
     });
   };
   const remove = (productId) => {
@@ -1432,7 +1436,7 @@ function ResultadosStep({ listText, storeKeys, onNext, onBack }) {
       <div className="screen" style={{ textAlign: "center", paddingTop: 60 }}>
         <div style={{ fontSize: 40, marginBottom: 16 }}>🔍</div>
         <h2 style={{ fontFamily: "'Sora', sans-serif", fontSize: 20, fontWeight: 700, color: "var(--primary)", marginBottom: 8 }}>
-          Buscando en 4 súpers...
+          Buscando en {storeKeys.length} súpers...
         </h2>
         <p style={{ color: "var(--text2)", fontSize: 14 }}>Comparando {lines.length} producto{lines.length !== 1 ? "s" : ""} en tiempo real</p>
         <div style={{ display: "flex", justifyContent: "center", gap: 6, marginTop: 24, flexWrap: "wrap" }}>
@@ -1502,7 +1506,7 @@ function ResultadosStep({ listText, storeKeys, onNext, onBack }) {
                 product={product}
                 storeKeys={storeKeys}
                 selection={cart[product.id] || null}
-                onSelect={(bi, s, price) => select(product.id, bi, s, price)}
+                onSelect={(bi, s, price, externalId) => select(product.id, bi, s, price, externalId)}
                 onRemove={() => remove(product.id)}
               />
             ) : (
@@ -1574,10 +1578,10 @@ function ResumenStep({ cartItems, onNext, onBack }) {
       </div>
 
       <button className="btn-primary" onClick={onNext}>
-        🔒 Ir a comprar — creá tu cuenta gratis
+        🛒 Armar carritos e ir a comprar
       </button>
       <p style={{ textAlign: "center", fontSize: 12, color: "var(--text2)", marginTop: 10 }}>
-        Es gratis. Solo para guardar tu lista y redirigirte a cada súper.
+        Armamos el carrito en cada súper automáticamente.
       </p>
     </div>
   );
@@ -1711,50 +1715,144 @@ function DonacionStep({ savings, onNext }) {
   );
 }
 
-// ── Step 7: Redirect ──────────────────────────────────────────────────────────
+// ── Step 7: Redirect (con carrito VTEX real) ─────────────────────────────────
 function RedirectStep({ storeBreakdown }) {
-  const STORE_URLS = {
-    vea:  "https://www.vea.com.ar",
-    mas:  "https://www.masonline.com.ar",
-    coto: "https://www.cotodigital.com.ar",
-    modo: "https://www.modomarket.com",
-  };
+  const [cartStatus, setCartStatus] = useState({});   // store → { loading, url, error, items_added }
+  const [building, setBuilding] = useState(false);
+
+  // Construir los carritos automáticamente al montar
+  useEffect(() => {
+    buildCarts();
+  }, []);
+
+  async function buildCarts() {
+    setBuilding(true);
+
+    // Preparar items para el backend: necesitamos external_id por producto+store
+    const cartItems = [];
+    storeBreakdown.forEach(({ store, items }) => {
+      items.forEach(item => {
+        const brand = item.product.brands[item.brandIdx];
+        const backKey = STORES[store].backKey;
+        // Usamos la URL del producto para extraer el external_id,
+        // o mandamos el que tengamos del search result
+        const url = brand.urls?.[store] || "";
+        const externalId = item.externalId || brand.externalIds?.[store] || "";
+        if (externalId) {
+          cartItems.push({
+            store: backKey,
+            external_id: externalId,
+            quantity: 1,
+            name: `${brand.brand} ${brand.unit}`,
+          });
+        }
+      });
+    });
+
+    if (cartItems.length > 0) {
+      try {
+        const data = await apiCall("/api/cart/build", {
+          method: "POST",
+          body: JSON.stringify({ items: cartItems }),
+        });
+
+        const newStatus = {};
+        data.carts.forEach(cart => {
+          // Mapear backKey a frontKey
+          const frontKey = BACK_TO_FRONT[cart.store] || cart.store;
+          newStatus[frontKey] = {
+            loading: false,
+            url: cart.success ? cart.checkout_url : STORES[frontKey]?.url,
+            items_added: cart.items_added,
+            error: !cart.success,
+          };
+        });
+        setCartStatus(newStatus);
+      } catch {
+        // Si falla el cart builder, usar URLs directas
+        storeBreakdown.forEach(({ store }) => {
+          setCartStatus(prev => ({
+            ...prev,
+            [store]: { loading: false, url: STORES[store].url, error: true, items_added: 0 },
+          }));
+        });
+      }
+    }
+
+    // Stores sin external_id → URL directa
+    storeBreakdown.forEach(({ store }) => {
+      setCartStatus(prev => {
+        if (prev[store]) return prev;
+        return { ...prev, [store]: { loading: false, url: STORES[store].url, error: false, items_added: 0 } };
+      });
+    });
+
+    setBuilding(false);
+  }
 
   return (
     <div className="screen">
       <div className="confetti">🛒</div>
-      <h1 className="screen-title" style={{ textAlign: "center" }}>Listo para comprar</h1>
+      <h1 className="screen-title" style={{ textAlign: "center" }}>
+        {building ? "Armando tus carritos..." : "Carritos listos"}
+      </h1>
       <p className="screen-sub" style={{ textAlign: "center" }}>
-        Tocá cada súper para ir directamente con tu lista. Los productos ya están cargados.
+        {building
+          ? "Estamos cargando los productos en cada súper. Un momento..."
+          : "Tocá cada súper para ir directo al checkout con tus productos cargados."}
       </p>
 
-      {storeBreakdown.map(({ store, total, items }) => (
-        <a
-          key={store}
-          className="redirect-card"
-          href={STORE_URLS[store]}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ display: "flex", textDecoration: "none" }}
-        >
-          <div className="redirect-left">
-            <div className="redirect-logo-box" style={{ background: STORES[store].bg }}>
-              {STORES[store].logo}
+      {storeBreakdown.map(({ store, total, items }) => {
+        const status = cartStatus[store] || { loading: true };
+        const href = status.url || STORES[store].url;
+        const ready = !status.loading && !building;
+
+        return (
+          <a
+            key={store}
+            className={`redirect-card ${ready ? "" : "loading"}`}
+            href={ready ? href : undefined}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={e => { if (!ready) e.preventDefault(); }}
+            style={{ display: "flex", textDecoration: "none", opacity: ready ? 1 : 0.6 }}
+          >
+            <div className="redirect-left">
+              <div className="redirect-logo-box" style={{ background: STORES[store].bg }}>
+                {STORES[store].logo}
+              </div>
+              <div>
+                <div className="redirect-name">{STORES[store].name}</div>
+                <div className="redirect-items">
+                  {items.map(i => i.product.brands[i.brandIdx].brand).join(", ")}
+                </div>
+                {ready && status.items_added > 0 && (
+                  <div style={{ fontSize: 11, color: "var(--primary)", marginTop: 2 }}>
+                    ✓ {status.items_added} producto(s) cargados en el carrito
+                  </div>
+                )}
+                {ready && status.items_added === 0 && !status.error && (
+                  <div style={{ fontSize: 11, color: "var(--text2)", marginTop: 2 }}>
+                    Elegí tu sucursal y los productos se agregarán
+                  </div>
+                )}
+                {ready && status.error && (
+                  <div style={{ fontSize: 11, color: "var(--accent2)", marginTop: 2 }}>
+                    Buscalos manualmente en el sitio
+                  </div>
+                )}
+              </div>
             </div>
-            <div>
-              <div className="redirect-name">{STORES[store].name}</div>
-              <div className="redirect-items">{items.map(i => i.product.brands[i.brandIdx].brand).join(", ")}</div>
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <div className="redirect-total">{fmt(total)}</div>
+              <div className="redirect-arrow">{ready ? "→" : "..."}</div>
             </div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center" }}>
-            <div className="redirect-total">{fmt(total)}</div>
-            <div className="redirect-arrow">→</div>
-          </div>
-        </a>
-      ))}
+          </a>
+        );
+      })}
 
       <div style={{ textAlign: "center", marginTop: 24, fontSize: 13, color: "var(--text2)" }}>
-        💡 Guardamos tu lista para la próxima compra
+        Los carritos se crean directamente en cada supermercado via VTEX.
       </div>
     </div>
   );
@@ -1796,18 +1894,6 @@ export default function SuperCompare() {
           <ResumenStep
             cartItems={cartItems}
             onBack={() => setStep(3)}
-            onNext={() => setStep(5)}
-          />
-        )}
-        {step === 5 && (
-          <AuthStep
-            onBack={() => setStep(4)}
-            onNext={() => setStep(6)}
-          />
-        )}
-        {step === 6 && opt && (
-          <DonacionStep
-            savings={opt.savings}
             onNext={() => setStep(7)}
           />
         )}

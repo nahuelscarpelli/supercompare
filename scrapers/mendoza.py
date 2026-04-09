@@ -232,7 +232,10 @@ class VTEXIntelligentSearchScraper:
             return None
 
         brand = item.get("brand", "")
-        product_id = str(item.get("productId", ""))
+        # Usar SKU itemId (necesario para agregar al carrito VTEX)
+        items_list = item.get("items", [])
+        sku_id = str(items_list[0].get("itemId", "")) if items_list else ""
+        product_id = sku_id or str(item.get("productId", ""))
 
         # Precio via priceRange (más confiable)
         price, promo_price, promo_desc = None, None, None
@@ -407,15 +410,16 @@ class VTEXCatalogScraper:
             return None
 
         brand = item.get("brand", "")
-        product_id = str(item.get("productId", ""))
+        items_list = item.get("items", [])
+        # Usar SKU itemId (necesario para agregar al carrito VTEX)
+        sku_id = str(items_list[0].get("itemId", "")) if items_list else ""
+        product_id = sku_id or str(item.get("productId", ""))
         link_text = item.get("linkText", "")
         product_url = f"{self.config['base_url']}/{link_text}/p" if link_text else ""
 
         price, promo_price, promo_desc = 0, None, None
         image_url = ""
         in_stock = True
-
-        items_list = item.get("items", [])
         if items_list:
             sku = items_list[0]
             imgs = sku.get("images", [])

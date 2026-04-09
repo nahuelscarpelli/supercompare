@@ -422,7 +422,7 @@ const css = `
   .header-hero {
     width: 100%;
     background: linear-gradient(160deg, var(--primary) 0%, #2D5A3D 60%, #1A3A2A 100%);
-    padding: 36px 24px 40px;
+    padding: 18px 24px 20px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -432,19 +432,19 @@ const css = `
   .hero-logo {
     font-family: 'Outfit', sans-serif;
     font-weight: 900;
-    font-size: 36px;
+    font-size: 26px;
     color: #FFFFFF;
-    letter-spacing: -1px;
-    margin-bottom: 8px;
+    letter-spacing: -0.5px;
+    margin-bottom: 4px;
   }
   .hero-logo span { color: var(--accent); }
   .hero-tagline {
     font-family: 'Outfit', sans-serif;
-    font-size: 15px;
+    font-size: 13px;
     font-weight: 400;
-    color: rgba(255,255,255,0.75);
+    color: rgba(255,255,255,0.7);
     max-width: 300px;
-    line-height: 1.5;
+    line-height: 1.4;
   }
 
   /* ── HEADER COMPACT (steps 2-5) ── */
@@ -780,6 +780,51 @@ const css = `
   }
   .unmatched-box strong { color: var(--accent2); }
 
+  /* ── SEARCH PROGRESS ── */
+  .search-progress {
+    width: 100%;
+    padding: 32px 0 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+  }
+  .progress-track {
+    width: 100%;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    animation: slide-progress 1.6s ease-in-out infinite;
+    width: 45%;
+  }
+  @keyframes slide-progress {
+    0%   { transform: translateX(-120%); }
+    100% { transform: translateX(280%); }
+  }
+  .progress-stores {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .progress-store-chip {
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    animation: pulse-chip 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse-chip {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.45; }
+  }
+
   /* ── FLOATING CART ── */
   .floating-cart {
     position: fixed;
@@ -1107,6 +1152,45 @@ const css = `
     margin-bottom: 4px;
   }
   .how-desc { font-size: 12px; color: var(--text2); line-height: 1.45; }
+
+  /* ── DONATION ── */
+  .donation-card {
+    background: linear-gradient(135deg, #FFF8E7 0%, #FFFBF0 100%);
+    border: 2px solid #F5C842;
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-top: 24px;
+    text-align: center;
+  }
+  .donation-title {
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--primary);
+    margin-bottom: 6px;
+  }
+  .donation-sub {
+    font-size: 13px;
+    color: var(--text2);
+    margin-bottom: 16px;
+    line-height: 1.5;
+  }
+  .donation-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: #009EE3;
+    color: white;
+    font-family: 'Outfit', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    padding: 14px 28px;
+    border-radius: 12px;
+    border: none;
+    text-decoration: none;
+    cursor: pointer;
+    transition: opacity .15s, transform .1s;
+  }
+  .donation-btn:hover { opacity: .92; transform: translateY(-1px); }
 
   /* ── FOOTER ── */
   .footer {
@@ -1532,15 +1616,27 @@ function ResultadosStep({ listText, storeKeys, onNext, onBack }) {
 
   if (loading) {
     return (
-      <div className="screen" style={{ textAlign: "center", paddingTop: 60 }}>
-        <div style={{ fontSize: 40, marginBottom: 16 }}>🔍</div>
-        <h2 style={{ fontFamily: "'Outfit', sans-serif", fontSize: 20, fontWeight: 700, color: "var(--primary)", marginBottom: 8 }}>
-          Buscando en {storeKeys.length} súpers...
+      <div className="screen">
+        <h2 style={{ fontSize: 20, fontWeight: 700, color: "var(--primary)", marginBottom: 6, marginTop: 32 }}>
+          Buscando precios...
         </h2>
-        <p style={{ color: "var(--text2)", fontSize: 14 }}>Comparando {lines.length} producto{lines.length !== 1 ? "s" : ""} en tiempo real</p>
-        <div style={{ display: "flex", justifyContent: "center", gap: 6, marginTop: 24, flexWrap: "wrap" }}>
-          {storeKeys.map(k => (
-            <div key={k} style={{ padding: "6px 12px", borderRadius: 20, background: STORES[k].bg, fontSize: 13, fontWeight: 600, color: STORES[k].color }}>
+        <p style={{ color: "var(--text2)", fontSize: 14, marginBottom: 20 }}>
+          Comparando {lines.length} producto{lines.length !== 1 ? "s" : ""} en {storeKeys.length} súpers en tiempo real
+        </p>
+        <div className="progress-track">
+          <div className="progress-fill" />
+        </div>
+        <div className="progress-stores" style={{ marginTop: 20 }}>
+          {storeKeys.map((k, i) => (
+            <div
+              key={k}
+              className="progress-store-chip"
+              style={{
+                background: STORES[k].bg,
+                color: STORES[k].color,
+                animationDelay: `${i * 0.2}s`,
+              }}
+            >
               {STORES[k].logo} {STORES[k].name}
             </div>
           ))}
@@ -1550,7 +1646,7 @@ function ResultadosStep({ listText, storeKeys, onNext, onBack }) {
   }
 
   return (
-    <div className="screen" style={{ paddingBottom: cartCount > 0 ? 90 : 0 }}>
+    <div className="screen" style={{ paddingBottom: cartCount > 0 ? 120 : 0 }}>
       <button className="back-btn" onClick={onBack}>← Editar lista</button>
       <h1 className="screen-title">Resultados</h1>
       <p className="screen-sub">
@@ -1803,8 +1899,8 @@ function RedirectStep({ storeBreakdown }) {
                   </div>
                 )}
                 {ready && status.items_added === 0 && !status.error && (
-                  <div style={{ fontSize: 11, color: "var(--text2)", marginTop: 2 }}>
-                    Elegí tu sucursal y los productos se agregarán
+                  <div style={{ fontSize: 11, color: "#D97706", marginTop: 2 }}>
+                    ⚠️ Seleccioná tu sucursal en el sitio para agregar los productos
                   </div>
                 )}
                 {ready && status.error && (
@@ -1822,8 +1918,26 @@ function RedirectStep({ storeBreakdown }) {
         );
       })}
 
-      <div style={{ textAlign: "center", marginTop: 24, fontSize: 13, color: "var(--text2)" }}>
+      <div style={{ textAlign: "center", marginTop: 16, fontSize: 12, color: "var(--text2)" }}>
         Los carritos se crean directamente en cada supermercado via VTEX.
+      </div>
+
+      <div className="donation-card">
+        <div className="donation-title">🙌 ¿Te sirvió AhorrAR?</div>
+        <div className="donation-sub">
+          Si ahorraste con esta búsqueda, podés invitarnos un cafecito para seguir mejorando la app. Es voluntario y se hace en segundos.
+        </div>
+        <a
+          className="donation-btn"
+          href="https://link.mercadopago.com.ar/rumbofolclore"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          💙 Donar con MercadoPago
+        </a>
+        <div style={{ fontSize: 11, color: "var(--text2)", marginTop: 10 }}>
+          100% voluntario · procesado por MercadoPago
+        </div>
       </div>
     </div>
   );

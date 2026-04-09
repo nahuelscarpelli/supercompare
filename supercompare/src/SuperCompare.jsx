@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 
 // ─── FONTS ───────────────────────────────────────────────────────────────────
-const FONT_LINK = "https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=DM+Sans:wght@400;500;600&display=swap";
+const FONT_LINK = "https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap";
 
 // ─── API CONFIG ───────────────────────────────────────────────────────────────
 const API_BASE = "http://localhost:8000";  // cambiar a dominio en prod
@@ -408,16 +408,46 @@ const css = `
     --radius-sm: 10px;
   }
 
-  body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); }
+  body { font-family: 'Outfit', sans-serif; background: var(--bg); color: var(--text); }
 
   .app {
     min-height: 100vh;
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 0 16px 80px;
+    padding: 0;
   }
 
+  /* ── HEADER HERO (step 1) ── */
+  .header-hero {
+    width: 100%;
+    background: linear-gradient(160deg, var(--primary) 0%, #2D5A3D 60%, #1A3A2A 100%);
+    padding: 36px 24px 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    margin-bottom: 0;
+  }
+  .hero-logo {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 900;
+    font-size: 36px;
+    color: #FFFFFF;
+    letter-spacing: -1px;
+    margin-bottom: 8px;
+  }
+  .hero-logo span { color: var(--accent); }
+  .hero-tagline {
+    font-family: 'Outfit', sans-serif;
+    font-size: 15px;
+    font-weight: 400;
+    color: rgba(255,255,255,0.75);
+    max-width: 300px;
+    line-height: 1.5;
+  }
+
+  /* ── HEADER COMPACT (steps 2-5) ── */
   .topbar {
     width: 100%;
     max-width: 540px;
@@ -427,9 +457,8 @@ const css = `
     padding: 20px 0 8px;
     margin-bottom: 8px;
   }
-
   .logo {
-    font-family: 'Sora', sans-serif;
+    font-family: 'Outfit', sans-serif;
     font-weight: 800;
     font-size: 22px;
     color: var(--primary);
@@ -437,10 +466,7 @@ const css = `
   }
   .logo span { color: var(--accent2); }
 
-  .step-dots {
-    display: flex;
-    gap: 5px;
-  }
+  .step-dots { display: flex; gap: 5px; }
   .dot {
     width: 6px; height: 6px;
     border-radius: 50%;
@@ -462,7 +488,7 @@ const css = `
   }
 
   .screen-title {
-    font-family: 'Sora', sans-serif;
+    font-family: 'Outfit', sans-serif;
     font-size: 28px;
     font-weight: 800;
     line-height: 1.15;
@@ -493,7 +519,7 @@ const css = `
     margin-bottom: 24px;
   }
   .store-toggle {
-    font-family: 'DM Sans', sans-serif;
+    font-family: 'Outfit', sans-serif;
     font-size: 14px;
     font-weight: 600;
     padding: 14px 12px;
@@ -524,7 +550,7 @@ const css = `
 
   /* ── LISTA ── */
   .list-textarea {
-    font-family: 'DM Sans', sans-serif;
+    font-family: 'Outfit', sans-serif;
     font-size: 17px;
     line-height: 1.8;
     width: 100%;
@@ -550,7 +576,7 @@ const css = `
 
   .trend-section { margin-top: 24px; }
   .trend-title {
-    font-family: 'Sora', sans-serif;
+    font-family: 'Outfit', sans-serif;
     font-size: 14px;
     font-weight: 700;
     color: var(--text);
@@ -562,7 +588,7 @@ const css = `
     gap: 8px;
   }
   .chip {
-    font-family: 'DM Sans', sans-serif;
+    font-family: 'Outfit', sans-serif;
     font-size: 14px;
     font-weight: 500;
     padding: 8px 16px;
@@ -598,7 +624,7 @@ const css = `
   .product-header-left { display: flex; align-items: center; gap: 10px; }
   .product-emoji { font-size: 26px; }
   .product-name {
-    font-family: 'Sora', sans-serif;
+    font-family: 'Outfit', sans-serif;
     font-size: 15px;
     font-weight: 700;
     color: var(--text);
@@ -694,7 +720,7 @@ const css = `
   .selected-summary strong { font-weight: 700; color: var(--primary); }
 
   .remove-btn {
-    font-family: 'DM Sans', sans-serif;
+    font-family: 'Outfit', sans-serif;
     font-size: 11px;
     font-weight: 600;
     padding: 5px 10px;
@@ -724,7 +750,7 @@ const css = `
     gap: 6px;
   }
   .subcat-chip {
-    font-family: 'DM Sans', sans-serif;
+    font-family: 'Outfit', sans-serif;
     font-size: 12px;
     font-weight: 600;
     padding: 5px 12px;
@@ -779,14 +805,14 @@ const css = `
     width: 28px; height: 28px;
     background: var(--accent);
     border-radius: 8px;
-    font-family: 'Sora', sans-serif;
+    font-family: 'Outfit', sans-serif;
     font-size: 14px;
     font-weight: 800;
     color: var(--primary);
     display: flex; align-items: center; justify-content: center;
   }
   .cart-label { font-size: 14px; font-weight: 600; color: white; }
-  .cart-total { font-family: 'Sora', sans-serif; font-size: 18px; font-weight: 800; color: var(--accent); }
+  .cart-total { font-family: 'Outfit', sans-serif; font-size: 18px; font-weight: 800; color: var(--accent); }
 
   /* ── RESUMEN ── */
   .savings-hero {
@@ -805,7 +831,7 @@ const css = `
     margin-bottom: 6px;
   }
   .savings-amount {
-    font-family: 'Sora', sans-serif;
+    font-family: 'Outfit', sans-serif;
     font-size: 48px;
     font-weight: 800;
     color: var(--accent);
@@ -823,7 +849,7 @@ const css = `
   }
   .breakdown-header {
     padding: 14px 18px;
-    font-family: 'Sora', sans-serif;
+    font-family: 'Outfit', sans-serif;
     font-size: 13px;
     font-weight: 700;
     text-transform: uppercase;
@@ -847,7 +873,7 @@ const css = `
   .store-dot { width: 10px; height: 10px; border-radius: 50%; }
   .breakdown-store-name { font-size: 15px; font-weight: 600; color: var(--text); }
   .breakdown-items { font-size: 12px; color: var(--text2); }
-  .breakdown-total { font-family: 'Sora', sans-serif; font-size: 16px; font-weight: 700; color: var(--text); }
+  .breakdown-total { font-family: 'Outfit', sans-serif; font-size: 16px; font-weight: 700; color: var(--text); }
 
   .vs-row {
     display: grid;
@@ -863,7 +889,7 @@ const css = `
     text-align: center;
   }
   .vs-label { font-size: 11px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
-  .vs-amount { font-family: 'Sora', sans-serif; font-size: 22px; font-weight: 800; }
+  .vs-amount { font-family: 'Outfit', sans-serif; font-size: 22px; font-weight: 800; }
   .vs-amount.bad { color: #FF6240; text-decoration: line-through; opacity: .6; }
   .vs-amount.good { color: var(--primary); }
 
@@ -876,7 +902,7 @@ const css = `
     margin-bottom: 16px;
   }
   .input-field {
-    font-family: 'DM Sans', sans-serif;
+    font-family: 'Outfit', sans-serif;
     font-size: 15px;
     width: 100%;
     padding: 14px 16px;
@@ -899,7 +925,7 @@ const css = `
   }
   .tab-btn {
     flex: 1;
-    font-family: 'DM Sans', sans-serif;
+    font-family: 'Outfit', sans-serif;
     font-size: 14px;
     font-weight: 600;
     padding: 9px;
@@ -920,7 +946,7 @@ const css = `
     margin-bottom: 14px;
   }
   .tip-btn {
-    font-family: 'Sora', sans-serif;
+    font-family: 'Outfit', sans-serif;
     font-size: 16px;
     font-weight: 700;
     padding: 16px 8px;
@@ -957,14 +983,14 @@ const css = `
     display: flex; align-items: center; justify-content: center;
     font-size: 22px;
   }
-  .redirect-name { font-family: 'Sora', sans-serif; font-size: 16px; font-weight: 700; color: var(--text); }
+  .redirect-name { font-family: 'Outfit', sans-serif; font-size: 16px; font-weight: 700; color: var(--text); }
   .redirect-items { font-size: 13px; color: var(--text2); }
-  .redirect-total { font-family: 'Sora', sans-serif; font-size: 18px; font-weight: 800; color: var(--primary); }
+  .redirect-total { font-family: 'Outfit', sans-serif; font-size: 18px; font-weight: 800; color: var(--primary); }
   .redirect-arrow { font-size: 18px; color: var(--text2); margin-left: 8px; }
 
   /* ── PRIMARY BTN ── */
   .btn-primary {
-    font-family: 'Sora', sans-serif;
+    font-family: 'Outfit', sans-serif;
     font-size: 16px;
     font-weight: 700;
     width: 100%;
@@ -983,7 +1009,7 @@ const css = `
   .btn-primary:disabled { opacity: .4; cursor: not-allowed; transform: none; }
 
   .btn-secondary {
-    font-family: 'DM Sans', sans-serif;
+    font-family: 'Outfit', sans-serif;
     font-size: 14px;
     font-weight: 600;
     width: 100%;
@@ -999,7 +1025,7 @@ const css = `
   .btn-secondary:hover { border-color: var(--text2); color: var(--text); }
 
   .back-btn {
-    font-family: 'DM Sans', sans-serif;
+    font-family: 'Outfit', sans-serif;
     font-size: 14px;
     font-weight: 500;
     background: none;
@@ -1045,15 +1071,130 @@ const css = `
     margin-left: 6px;
     vertical-align: middle;
   }
+
+  /* ── CÓMO FUNCIONA ── */
+  .how-section {
+    width: 100%;
+    max-width: 540px;
+    padding: 32px 0 8px;
+  }
+  .how-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--primary);
+    text-align: center;
+    margin-bottom: 20px;
+  }
+  .how-cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+  }
+  .how-card {
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 12px;
+    text-align: center;
+  }
+  .how-icon { font-size: 28px; margin-bottom: 8px; }
+  .how-step {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--accent2);
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    margin-bottom: 4px;
+  }
+  .how-desc { font-size: 12px; color: var(--text2); line-height: 1.45; }
+
+  /* ── FOOTER ── */
+  .footer {
+    width: 100%;
+    background: var(--primary);
+    padding: 32px 24px 28px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    margin-top: 40px;
+  }
+  .footer-logo {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 900;
+    font-size: 22px;
+    color: white;
+    letter-spacing: -0.5px;
+  }
+  .footer-logo span { color: var(--accent); }
+  .footer-tagline {
+    font-size: 13px;
+    color: rgba(255,255,255,0.55);
+    text-align: center;
+    max-width: 260px;
+    margin-top: -8px;
+  }
+  .footer-socials {
+    display: flex;
+    gap: 12px;
+    margin-top: 4px;
+  }
+  .social-btn {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: white;
+    font-size: 16px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background .15s;
+  }
+  .social-btn:hover { background: rgba(255,255,255,0.2); }
+  .footer-legal {
+    font-size: 11px;
+    color: rgba(255,255,255,0.3);
+    text-align: center;
+  }
+
+  /* ── TABLE improvements ── */
+  .brand-table thead th {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: var(--text2);
+    background: #F7F6F3;
+  }
+  .brand-table tbody tr:hover td { background: #F7F6F3; }
+  .price-badge-cheap {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 20px;
+    background: #DCFCE7;
+    color: #16A34A;
+    margin-bottom: 3px;
+  }
 `;
 
 // ─── COMPONENTS ───────────────────────────────────────────────────────────────
 
-function TopBar({ step }) {
+function Header({ step }) {
+  if (step === 1) {
+    return (
+      <div className="header-hero">
+        <div className="hero-logo">Super<span>Ahorro</span></div>
+        <div className="hero-tagline">Comparamos el precio en todos los súpers para que vos ahorrés.</div>
+      </div>
+    );
+  }
   const total = 5;
   return (
     <div className="topbar">
-      <div className="logo">Super<span>Compare</span></div>
+      <div className="logo">Super<span style={{ color: "var(--accent2)" }}>Ahorro</span></div>
       <div className="step-dots">
         {Array.from({ length: total }).map((_, i) => (
           <div key={i} className={`dot ${i < step - 1 ? "done" : i === step - 1 ? "active" : ""}`} />
@@ -1062,6 +1203,47 @@ function TopBar({ step }) {
     </div>
   );
 }
+
+function ComoFunciona() {
+  const steps = [
+    { icon: "📋", label: "Paso 1", title: "Elegís tus súpers", desc: "Seleccionás los supermercados que tenés disponibles en tu zona." },
+    { icon: "🔍", label: "Paso 2", title: "Armás tu lista", desc: "Escribís los productos que necesitás y buscamos en tiempo real." },
+    { icon: "💸", label: "Paso 3", title: "Ahorrás", desc: "Elegís el mejor precio y te mandamos directo al checkout con el carrito armado." },
+  ];
+  return (
+    <div className="how-section">
+      <div className="how-title">¿Cómo funciona?</div>
+      <div className="how-cards">
+        {steps.map((s, i) => (
+          <div key={i} className="how-card">
+            <div className="how-icon">{s.icon}</div>
+            <div className="how-step">{s.label}</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>{s.title}</div>
+            <div className="how-desc">{s.desc}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Footer() {
+  return (
+    <div className="footer">
+      <div className="footer-logo">Super<span>Ahorro</span></div>
+      <div className="footer-tagline">El precio más bajo, siempre. Hecho en Argentina.</div>
+      <div className="footer-socials">
+        <a className="social-btn" href="https://instagram.com" target="_blank" rel="noopener noreferrer" title="Instagram">📸</a>
+        <a className="social-btn" href="https://twitter.com" target="_blank" rel="noopener noreferrer" title="X / Twitter">𝕏</a>
+        <a className="social-btn" href="https://tiktok.com" target="_blank" rel="noopener noreferrer" title="TikTok">🎵</a>
+        <a className="social-btn" href="https://wa.me/" target="_blank" rel="noopener noreferrer" title="WhatsApp">💬</a>
+      </div>
+      <div className="footer-legal">© 2026 SuperAhorro · 🇦🇷 Argentina</div>
+    </div>
+  );
+}
+
+// ─── COMPONENTS ───────────────────────────────────────────────────────────────
 
 // ── Step 1: Selección de súpers ───────────────────────────────────────────────
 function ZonaStep({ onNext }) {
@@ -1080,7 +1262,7 @@ function ZonaStep({ onNext }) {
   return (
     <div className="screen">
       <h1 className="screen-title">¿En qué súpers comprás?</h1>
-      <p className="screen-sub">Seleccioná los supermercados online disponibles en tu zona.</p>
+      <p className="screen-sub">Seleccioná los que tenés disponibles en tu zona. Podés cambiarlos después.</p>
 
       <div className="store-grid">
         {Object.entries(STORES).map(([key, s]) => {
@@ -1227,7 +1409,7 @@ function ProductCard({ product, storeKeys, selection, onSelect, onRemove }) {
                         className={`price-cell ${isGlobalMin ? "cheapest-all" : ""} ${isSelected ? "selected-cell" : ""}`}
                         onClick={() => onSelect(bi, s, price, brand.externalIds?.[s])}
                       >
-                        {isGlobalMin && !isSelected && <div className="cheapest-badge">★ mejor</div>}
+                        {isGlobalMin && <div className="price-badge-cheap">✓ más bajo</div>}
                         <div className="cell-price">{fmt(price)}</div>
                       </div>
                     ) : (
@@ -1352,7 +1534,7 @@ function ResultadosStep({ listText, storeKeys, onNext, onBack }) {
     return (
       <div className="screen" style={{ textAlign: "center", paddingTop: 60 }}>
         <div style={{ fontSize: 40, marginBottom: 16 }}>🔍</div>
-        <h2 style={{ fontFamily: "'Sora', sans-serif", fontSize: 20, fontWeight: 700, color: "var(--primary)", marginBottom: 8 }}>
+        <h2 style={{ fontFamily: "'Outfit', sans-serif", fontSize: 20, fontWeight: 700, color: "var(--primary)", marginBottom: 8 }}>
           Buscando en {storeKeys.length} súpers...
         </h2>
         <p style={{ color: "var(--text2)", fontSize: 14 }}>Comparando {lines.length} producto{lines.length !== 1 ? "s" : ""} en tiempo real</p>
@@ -1471,7 +1653,7 @@ function ResumenStep({ cartItems, onNext, onBack }) {
           <div className="vs-amount bad">{fmt(totalWorst)}</div>
         </div>
         <div className="vs-card">
-          <div className="vs-label">Con SuperCompare</div>
+          <div className="vs-label">Con SuperAhorro</div>
           <div className="vs-amount good">{fmt(totalOptimized)}</div>
         </div>
       </div>
@@ -1659,36 +1841,43 @@ export default function SuperCompare() {
   return (
     <>
       <style>{css}</style>
-      <div className="app">
-        <TopBar step={step} />
+      <div className="app" style={{ padding: 0 }}>
+        <Header step={step} />
 
-        {step === 1 && (
-          <ZonaStep onNext={(z, keys) => { if (keys) setStoreKeys(keys); setStep(2); }} />
-        )}
-        {step === 2 && (
-          <ListaStep
-            onBack={() => setStep(1)}
-            onNext={(text) => { setListText(text); setStep(3); }}
-          />
-        )}
-        {step === 3 && (
-          <ResultadosStep
-            listText={listText}
-            storeKeys={storeKeys}
-            onBack={() => setStep(2)}
-            onNext={(items) => { setCartItems(items); setStep(4); }}
-          />
-        )}
-        {step === 4 && (
-          <ResumenStep
-            cartItems={cartItems}
-            onBack={() => setStep(3)}
-            onNext={() => setStep(5)}
-          />
-        )}
-        {step === 5 && opt && (
-          <RedirectStep storeBreakdown={opt.storeBreakdown} />
-        )}
+        <div style={{ width: "100%", maxWidth: 540, padding: "0 16px", display: "flex", flexDirection: "column", alignItems: "stretch", flex: 1 }}>
+          {step === 1 && (
+            <>
+              <ZonaStep onNext={(z, keys) => { if (keys) setStoreKeys(keys); setStep(2); }} />
+              <ComoFunciona />
+            </>
+          )}
+          {step === 2 && (
+            <ListaStep
+              onBack={() => setStep(1)}
+              onNext={(text) => { setListText(text); setStep(3); }}
+            />
+          )}
+          {step === 3 && (
+            <ResultadosStep
+              listText={listText}
+              storeKeys={storeKeys}
+              onBack={() => setStep(2)}
+              onNext={(items) => { setCartItems(items); setStep(4); }}
+            />
+          )}
+          {step === 4 && (
+            <ResumenStep
+              cartItems={cartItems}
+              onBack={() => setStep(3)}
+              onNext={() => setStep(5)}
+            />
+          )}
+          {step === 5 && opt && (
+            <RedirectStep storeBreakdown={opt.storeBreakdown} />
+          )}
+        </div>
+
+        <Footer />
       </div>
     </>
   );

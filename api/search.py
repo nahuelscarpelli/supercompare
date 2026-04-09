@@ -164,7 +164,7 @@ async def search_products(
     
     Examples:
         /api/search?q=leche+entera
-        /api/search?q=arroz&stores=vea,coto&limit=10
+        /api/search?q=arroz&stores=vea,masonline&limit=10
         /api/search?q=yerba&sort=unit_price
     """
     start = time.monotonic()

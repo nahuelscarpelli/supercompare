@@ -6,18 +6,9 @@ const FONT_LINK = "https://fonts.googleapis.com/css2?family=Sora:wght@400;600;70
 // ─── API CONFIG ───────────────────────────────────────────────────────────────
 const API_BASE = "http://localhost:8000";  // cambiar a dominio en prod
 
-// Token management
-const getToken = () => localStorage.getItem("sc_token");
-const setToken = (t) => localStorage.setItem("sc_token", t);
-
 async function apiCall(path, options = {}) {
-  const token = getToken();
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options.headers,
-    },
+    headers: { "Content-Type": "application/json", ...options.headers },
     ...options,
   });
   if (!res.ok) {
@@ -223,26 +214,7 @@ function buildProductFromResults(searchTerm, apiResults, storeKeys, id, subcatFi
 }
 
 
-// Auth
-async function register(name, email, password, zone, supermarkets) {
-  const data = await apiCall("/auth/register", {
-    method: "POST",
-    body: JSON.stringify({ name, email, password, zone, supermarkets }),
-  });
-  if (data.access_token) setToken(data.access_token);
-  return data;
-}
-
-async function login(email, password) {
-  const data = await apiCall("/auth/login", {
-    method: "POST",
-    body: JSON.stringify({ email, password }),
-  });
-  if (data.access_token) setToken(data.access_token);
-  return data;
-}
-
-// Zonas (con fallback a lista hardcodeada si el back no responde)
+// ─── STORES CONFIG ────────────────────────────────────────────────────────────
 
 // ─── STORES CONFIG ────────────────────────────────────────────────────────────
 const STORES = {
@@ -259,87 +231,7 @@ const BACK_TO_FRONT = Object.fromEntries(
   Object.entries(STORES).map(([fk, s]) => [s.backKey, fk])
 );
 
-// ─── FALLBACK MOCK (solo si el back no responde) ──────────────────────────────
-const MOCK_CATALOG = [
-  { id: 1, name: "Leche entera", emoji: "🥛", keyword: ["leche"],
-    brands: [
-      { brand: "La Serenísima", unit: "1L",   prices: { vea: 1290, mas: 1250, jumbo: 1310, modo: 1275 } },
-      { brand: "Sancor",        unit: "1L",   prices: { vea: 1180, mas: 1150, jumbo: 1200, modo: null  } },
-      { brand: "Atalact",       unit: "1L",   prices: { vea: null, mas:  980, jumbo: 1020, modo:  960  } },
-    ]},
-  { id: 2, name: "Aceite girasol", emoji: "🫙", keyword: ["aceite"],
-    brands: [
-      { brand: "Cocinero",  unit: "1.5L", prices: { vea: 3890, mas: 3750, jumbo: 3920, modo: 3800 } },
-      { brand: "Natura",    unit: "1.5L", prices: { vea: 3650, mas: 3580, jumbo: null,  modo: 3620 } },
-    ]},
-  { id: 3, name: "Arroz", emoji: "🍚", keyword: ["arroz"],
-    brands: [
-      { brand: "Gallo",    unit: "1kg", prices: { vea: 1690, mas: 1590, jumbo: 1750, modo: 1620 } },
-      { brand: "Lucchetti",unit: "1kg", prices: { vea: 1520, mas: 1480, jumbo: 1580, modo: null  } },
-    ]},
-  { id: 4, name: "Fideos", emoji: "🍝", keyword: ["fideo", "pasta"],
-    brands: [
-      { brand: "Matarazzo", unit: "500g", prices: { vea:  980, mas:  890, jumbo: 1020, modo:  950 } },
-      { brand: "Lucchetti", unit: "500g", prices: { vea:  920, mas:  870, jumbo:  960, modo:  880 } },
-    ]},
-  { id: 5, name: "Yerba mate", emoji: "🧉", keyword: ["yerba"],
-    brands: [
-      { brand: "Taragüí",   unit: "1kg", prices: { vea: 4250, mas: 4100, jumbo: 4380, modo: 4200 } },
-      { brand: "Amanda",    unit: "1kg", prices: { vea: 3980, mas: 3850, jumbo: 4100, modo: 3900 } },
-    ]},
-  { id: 6, name: "Harina", emoji: "🌾", keyword: ["harina"],
-    brands: [
-      { brand: "Pureza",   unit: "1kg", prices: { vea:  890, mas:  850, jumbo:  910, modo:  870 } },
-      { brand: "Cañuelas", unit: "1kg", prices: { vea:  820, mas:  790, jumbo:  840, modo: null  } },
-    ]},
-  { id: 7, name: "Azúcar", emoji: "🍬", keyword: ["azucar", "azúcar"],
-    brands: [
-      { brand: "Ledesma",  unit: "1kg", prices: { vea: 1150, mas: 1080, jumbo: 1190, modo: 1120 } },
-      { brand: "Chango",   unit: "1kg", prices: { vea: 1050, mas:  990, jumbo: 1100, modo: 1020 } },
-    ]},
-  { id: 8, name: "Huevos", emoji: "🥚", keyword: ["huevo", "huevos"],
-    brands: [
-      { brand: "Granja del Sol", unit: "x12", prices: { vea: 2890, mas: 2750, jumbo: 2950, modo: 2800 } },
-      { brand: "La Campagnola",  unit: "x12", prices: { vea: 2650, mas: 2580, jumbo: null,  modo: 2620 } },
-    ]},
-  { id: 9, name: "Cerveza", emoji: "🍺", keyword: ["cerveza"],
-    brands: [
-      { brand: "Quilmes",  unit: "1L",   prices: { vea: 2100, mas: 1980, jumbo: 2200, modo: 2050 } },
-      { brand: "Brahma",   unit: "1L",   prices: { vea: 1850, mas: 1790, jumbo: 1920, modo: 1830 } },
-    ]},
-  { id: 10, name: "Pan lactal", emoji: "🍞", keyword: ["pan", "lactal"],
-    brands: [
-      { brand: "Bimbo", unit: "500g", prices: { vea: 1450, mas: 1380, jumbo: 1500, modo: 1420 } },
-      { brand: "Fargo", unit: "500g", prices: { vea: 1320, mas: 1280, jumbo: 1380, modo: null  } },
-    ]},
-  { id: 11, name: "Queso cremoso", emoji: "🧀", keyword: ["queso"],
-    brands: [
-      { brand: "La Serenísima", unit: "400g", prices: { vea: 3200, mas: 3050, jumbo: 3350, modo: 3100 } },
-      { brand: "Tregar",        unit: "400g", prices: { vea: 2750, mas: null,  jumbo: 2900, modo: 2800 } },
-    ]},
-  { id: 12, name: "Detergente", emoji: "🧴", keyword: ["detergente"],
-    brands: [
-      { brand: "Magistral", unit: "750ml", prices: { vea: 1890, mas: 1750, jumbo: 1950, modo: 1810 } },
-      { brand: "Ala",       unit: "750ml", prices: { vea: 1650, mas: 1580, jumbo: 1720, modo: null  } },
-    ]},
-  { id: 13, name: "Papel higiénico", emoji: "🧻", keyword: ["papel", "higienico"],
-    brands: [
-      { brand: "Higienol", unit: "x4", prices: { vea: 1650, mas: 1580, jumbo: 1700, modo: 1620 } },
-      { brand: "Elite",    unit: "x4", prices: { vea: 1450, mas: 1390, jumbo: 1500, modo: null  } },
-    ]},
-  { id: 14, name: "Tomate triturado", emoji: "🍅", keyword: ["tomate"],
-    brands: [
-      { brand: "Arcor",         unit: "400g", prices: { vea:  780, mas:  720, jumbo:  800, modo:  750 } },
-      { brand: "La Campagnola", unit: "400g", prices: { vea:  720, mas:  680, jumbo:  740, modo: null  } },
-    ]},
-  { id: 15, name: "Atún", emoji: "🐟", keyword: ["atun", "atún"],
-    brands: [
-      { brand: "La Campagnola", unit: "170g", prices: { vea: 1100, mas: 1020, jumbo: 1150, modo: 1060 } },
-      { brand: "Alka",          unit: "170g", prices: { vea:  980, mas:  920, jumbo: 1010, modo: null  } },
-    ]},
-];
-
-
+// ─── FALLBACK CATALOG (solo si el back no responde) ───────────────────────────
 const CATALOG = [
   { id: 1, name: "Leche entera", emoji: "🥛", keyword: ["leche"],
     brands: [
@@ -450,13 +342,13 @@ function parseList(text) {
     .filter(Boolean);
 }
 
-// Fallback: match contra MOCK_CATALOG si el back no responde
+// Fallback: match contra CATALOG si el back no responde
 function matchProductsMock(lines) {
   const matched = [];
   const unmatched = [];
   lines.forEach(line => {
     const lline = line.toLowerCase();
-    const found = MOCK_CATALOG.find(p =>
+    const found = CATALOG.find(p =>
       p.keyword.some(k => lline.includes(k)) || lline.includes(p.name.toLowerCase())
     );
     if (found && !matched.find(m => m.id === found.id)) matched.push(found);
@@ -1158,7 +1050,7 @@ const css = `
 // ─── COMPONENTS ───────────────────────────────────────────────────────────────
 
 function TopBar({ step }) {
-  const total = 6;
+  const total = 5;
   return (
     <div className="topbar">
       <div className="logo">Super<span>Compare</span></div>
@@ -1587,135 +1479,7 @@ function ResumenStep({ cartItems, onNext, onBack }) {
   );
 }
 
-// ── Step 5: Auth ──────────────────────────────────────────────────────────────
-function AuthStep({ onNext, onBack }) {
-  const [mode, setMode] = useState("register"); // "login" | "register"
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const [error, setError] = useState("");
-  const pwOk = password.length >= 8;
-  const canSubmit = email.includes("@") && pwOk && (mode === "login" || name.trim().length > 0);
-
-  const handle = async () => {
-    if (!canSubmit) return;
-    setLoading(true);
-    setError("");
-    try {
-      if (mode === "register") {
-        await register(name, email, password, "mendoza", Object.keys(STORES));
-      } else {
-        await login(email, password);
-      }
-      onNext({ name, email });
-    } catch (err) {
-      setError(err.message || "Error al autenticar. Verificá tus datos.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="screen">
-      <button className="back-btn" onClick={onBack}>← Volver al resumen</button>
-      <div className="confetti">🎉</div>
-      <h1 className="screen-title" style={{ textAlign: "center" }}>
-        ¡Ahorrás {""}<span style={{ color: "var(--accent2)" }}>mucho</span>!
-      </h1>
-      <p className="screen-sub" style={{ textAlign: "center", marginBottom: 20 }}>
-        Creá tu cuenta gratis para ir a comprar y guardar tus listas.
-      </p>
-
-      <div className="auth-card">
-        <div className="tab-switch">
-          <button className={`tab-btn ${mode === "register" ? "active" : ""}`} onClick={() => setMode("register")}>Crear cuenta</button>
-          <button className={`tab-btn ${mode === "login" ? "active" : ""}`} onClick={() => setMode("login")}>Ya tengo cuenta</button>
-        </div>
-
-        {mode === "register" && (
-          <input className="input-field" placeholder="Tu nombre" value={name} onChange={e => setName(e.target.value)} />
-        )}
-        <input className="input-field" placeholder="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} />
-        <input className="input-field" placeholder="Contraseña" type="password" value={password} onChange={e => setPassword(e.target.value)} />
-        {mode === "register" && !pwOk && password.length > 0 && (
-          <p className="pw-hint">La contraseña debe tener al menos 8 caracteres.</p>
-        )}
-
-        <button className="btn-primary" disabled={!canSubmit || loading} onClick={handle} style={{ marginTop: 12 }}>
-          {loading ? "Entrando..." : mode === "register" ? "Crear cuenta gratis →" : "Ingresar →"}
-        </button>
-        {error && (
-          <p style={{ fontSize: 13, color: "var(--accent2)", textAlign: "center", marginTop: 8 }}>⚠️ {error}</p>
-        )}
-      </div>
-
-      <p style={{ fontSize: 11, color: "var(--text2)", textAlign: "center", marginTop: 8 }}>
-        Al continuar aceptás los términos de uso. No te vamos a mandar spam.
-      </p>
-    </div>
-  );
-}
-
-// ── Step 6: Donación ──────────────────────────────────────────────────────────
-function DonacionStep({ savings, onNext }) {
-  const [selected, setSelected] = useState(null);
-  const tips = [
-    { pct: 5,  label: "5%" },
-    { pct: 10, label: "10%" },
-    { pct: 15, label: "15%" },
-    { pct: 20, label: "20%" },
-  ];
-
-  return (
-    <div className="screen">
-      <div className="confetti">🙌</div>
-      <h1 className="screen-title" style={{ textAlign: "center" }}>¿Te sirvió?</h1>
-      <p className="screen-sub" style={{ textAlign: "center" }}>
-        Dejanos una propina voluntaria para seguir mejorando la app.
-        Vos ahorrás, nosotros crecemos.
-      </p>
-
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div style={{ textAlign: "center", marginBottom: 20 }}>
-          <div style={{ fontSize: 13, color: "var(--text2)", marginBottom: 4 }}>Ahorraste</div>
-          <div style={{ fontFamily: "'Sora', sans-serif", fontSize: 36, fontWeight: 800, color: "var(--primary)" }}>
-            {fmt(savings)}
-          </div>
-        </div>
-
-        <div className="tip-grid">
-          {tips.map(t => {
-            const amount = Math.round(savings * t.pct / 100);
-            return (
-              <button
-                key={t.pct}
-                className={`tip-btn ${selected === t.pct ? "selected" : ""}`}
-                onClick={() => setSelected(selected === t.pct ? null : t.pct)}
-              >
-                {t.label}
-                <div className="tip-sub">{fmt(amount)}</div>
-              </button>
-            );
-          })}
-        </div>
-
-        {selected && (
-          <button className="btn-primary" onClick={() => onNext(selected)}>
-            Dejar propina de {fmt(Math.round(savings * selected / 100))} →
-          </button>
-        )}
-      </div>
-
-      <button className="btn-secondary" onClick={() => onNext(null)}>
-        Continuar sin propina
-      </button>
-    </div>
-  );
-}
-
-// ── Step 7: Redirect (con carrito VTEX real) ─────────────────────────────────
+// ── Step 5: Redirect (con carrito VTEX real) ─────────────────────────────────
 function RedirectStep({ storeBreakdown }) {
   const [cartStatus, setCartStatus] = useState({});   // store → { loading, url, error, items_added }
   const [building, setBuilding] = useState(false);
@@ -1894,10 +1658,10 @@ export default function SuperCompare() {
           <ResumenStep
             cartItems={cartItems}
             onBack={() => setStep(3)}
-            onNext={() => setStep(7)}
+            onNext={() => setStep(5)}
           />
         )}
-        {step === 7 && opt && (
+        {step === 5 && opt && (
           <RedirectStep storeBreakdown={opt.storeBreakdown} />
         )}
       </div>

@@ -1186,7 +1186,7 @@ function Header({ step }) {
   if (step === 1) {
     return (
       <div className="header-hero">
-        <div className="hero-logo">Super<span>Ahorro</span></div>
+        <div className="hero-logo">Ahorr<span>AR</span></div>
         <div className="hero-tagline">Comparamos el precio en todos los súpers para que vos ahorrés.</div>
       </div>
     );
@@ -1230,7 +1230,7 @@ function ComoFunciona() {
 function Footer() {
   return (
     <div className="footer">
-      <div className="footer-logo">Super<span>Ahorro</span></div>
+      <div className="footer-logo">Ahorr<span>AR</span></div>
       <div className="footer-tagline">El precio más bajo, siempre. Hecho en Argentina.</div>
       <div className="footer-socials">
         <a className="social-btn" href="https://instagram.com" target="_blank" rel="noopener noreferrer" title="Instagram">📸</a>
@@ -1238,7 +1238,7 @@ function Footer() {
         <a className="social-btn" href="https://tiktok.com" target="_blank" rel="noopener noreferrer" title="TikTok">🎵</a>
         <a className="social-btn" href="https://wa.me/" target="_blank" rel="noopener noreferrer" title="WhatsApp">💬</a>
       </div>
-      <div className="footer-legal">© 2026 SuperAhorro · 🇦🇷 Argentina</div>
+      <div className="footer-legal">© 2026 AhorrAR · 🇦🇷 Argentina</div>
     </div>
   );
 }
@@ -1653,7 +1653,7 @@ function ResumenStep({ cartItems, onNext, onBack }) {
           <div className="vs-amount bad">{fmt(totalWorst)}</div>
         </div>
         <div className="vs-card">
-          <div className="vs-label">Con SuperAhorro</div>
+          <div className="vs-label">Con AhorrAR</div>
           <div className="vs-amount good">{fmt(totalOptimized)}</div>
         </div>
       </div>

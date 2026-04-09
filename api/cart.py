@@ -209,17 +209,21 @@ async def build_vtex_cart(store_key: str, items: list[CartItem]) -> StoreCart:
     config = VTEX_STORES[store_key]
     base_url = config["base_url"]
 
-    # ── Cencosud (Vea, Jumbo, Disco): usar URL directa, sin orderForm API ──────
-    # La API de checkout de Cencosud requiere sucursal seleccionada (ORD027).
-    # La URL /checkout/cart/add permite al browser manejar el flujo naturalmente.
+    # ── Cencosud (Vea, Jumbo, Disco): no pre-cargar ───────────────────────────
+    # Estos stores requieren sucursal antes de agregar items.
+    # Devolvemos el checkout URL limpio — el frontend muestra links por producto.
     if store_key in CENCOSUD_STORES:
-        checkout_url = build_cencosud_cart_url(base_url, items)
+        checkout_url = (
+            f"{base_url}/checkout"
+            f"?utm_source=ahorrAR&utm_medium=price-comparison&utm_campaign=cart-builder"
+            f"#/cart"
+        )
         return StoreCart(
             store=store_key,
             store_name=config["name"],
             checkout_url=checkout_url,
-            items_added=len(items),   # optimista: el usuario confirma al elegir sucursal
-            items_failed=[],
+            items_added=0,
+            items_failed=[item.name or item.external_id for item in items],
             success=True,
         )
 

@@ -1156,6 +1156,39 @@ const css = `
   }
   .how-desc { font-size: 12px; color: var(--text2); line-height: 1.45; }
 
+  /* ── BRANCH PRODUCTS (Cencosud) ── */
+  .redirect-card-wrap { margin-bottom: 12px; }
+  .redirect-card-wrap .redirect-card { margin-bottom: 0; border-radius: 14px 14px 0 0; }
+  .redirect-card.needs-branch { border-bottom: none; }
+  .branch-products {
+    background: #FFFBF0;
+    border: 1.5px solid #F5C842;
+    border-top: none;
+    border-radius: 0 0 14px 14px;
+    padding: 12px 14px;
+  }
+  .branch-products-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #92610A;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: .3px;
+  }
+  .branch-products-list { display: flex; flex-direction: column; gap: 6px; }
+  .branch-product-link {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--primary);
+    text-decoration: none;
+    padding: 7px 10px;
+    background: white;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    transition: background .15s;
+  }
+  .branch-product-link:hover { background: #F0F8F3; }
+
   /* ── DONATION ── */
   .donation-card {
     background: linear-gradient(135deg, #FFF8E7 0%, #FFFBF0 100%);
@@ -1882,48 +1915,72 @@ function RedirectStep({ storeBreakdown, onBack }) {
         const status = cartStatus[store] || { loading: true };
         const href = status.url || STORES[store].url;
         const ready = !status.loading && !building;
+        const needsBranch = ready && status.items_added === 0 && !status.error;
 
         return (
-          <a
-            key={store}
-            className={`redirect-card ${ready ? "" : "loading"}`}
-            href={ready ? href : undefined}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={e => { if (!ready) e.preventDefault(); }}
-            style={{ display: "flex", textDecoration: "none", opacity: ready ? 1 : 0.6 }}
-          >
-            <div className="redirect-left">
-              <div className="redirect-logo-box" style={{ background: STORES[store].bg }}>
-                {STORES[store].logo}
-              </div>
-              <div>
-                <div className="redirect-name">{STORES[store].name}</div>
-                <div className="redirect-items">
-                  {items.map(i => i.product.brands[i.brandIdx].brand).join(", ")}
+          <div key={store} className="redirect-card-wrap">
+            {/* ── Fila principal del súper ── */}
+            <a
+              className={`redirect-card ${ready ? "" : "loading"} ${needsBranch ? "needs-branch" : ""}`}
+              href={ready ? href : undefined}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={e => { if (!ready) e.preventDefault(); }}
+              style={{ display: "flex", textDecoration: "none", opacity: ready ? 1 : 0.6 }}
+            >
+              <div className="redirect-left">
+                <div className="redirect-logo-box" style={{ background: STORES[store].bg }}>
+                  {STORES[store].logo}
                 </div>
-                {ready && status.items_added > 0 && (
-                  <div style={{ fontSize: 11, color: "var(--primary)", marginTop: 2 }}>
-                    ✓ {status.items_added} producto(s) cargados en el carrito
-                  </div>
-                )}
-                {ready && status.items_added === 0 && !status.error && (
-                  <div style={{ fontSize: 11, color: "#D97706", marginTop: 2 }}>
-                    ⚠️ Seleccioná tu sucursal en el sitio para agregar los productos
-                  </div>
-                )}
-                {ready && status.error && (
-                  <div style={{ fontSize: 11, color: "var(--accent2)", marginTop: 2 }}>
-                    Buscalos manualmente en el sitio
-                  </div>
-                )}
+                <div>
+                  <div className="redirect-name">{STORES[store].name}</div>
+                  {ready && status.items_added > 0 && (
+                    <div style={{ fontSize: 11, color: "var(--primary)", marginTop: 2 }}>
+                      ✓ {status.items_added} producto(s) cargados en el carrito
+                    </div>
+                  )}
+                  {needsBranch && (
+                    <div style={{ fontSize: 11, color: "#D97706", marginTop: 2 }}>
+                      ⚠️ Elegí tu sucursal → luego agregá los productos
+                    </div>
+                  )}
+                  {ready && status.error && (
+                    <div style={{ fontSize: 11, color: "var(--accent2)", marginTop: 2 }}>
+                      Ir al sitio y buscar manualmente
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-            <div style={{ display: "flex", alignItems: "center" }}>
-              <div className="redirect-total">{fmt(total)}</div>
-              <div className="redirect-arrow">{ready ? "→" : "..."}</div>
-            </div>
-          </a>
+              <div style={{ display: "flex", alignItems: "center" }}>
+                <div className="redirect-total">{fmt(total)}</div>
+                <div className="redirect-arrow">{ready ? "→" : "..."}</div>
+              </div>
+            </a>
+
+            {/* ── Links por producto (solo cuando necesita sucursal) ── */}
+            {needsBranch && (
+              <div className="branch-products">
+                <div className="branch-products-label">Abrí cada producto y agregalo al carrito:</div>
+                <div className="branch-products-list">
+                  {items.map((item, idx) => {
+                    const brand = item.product.brands[item.brandIdx];
+                    const productUrl = brand.urls?.[store] || STORES[store].url;
+                    return (
+                      <a
+                        key={idx}
+                        href={productUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="branch-product-link"
+                      >
+                        {item.product.emoji} {brand.brand} {brand.unit} →
+                      </a>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
         );
       })}
 

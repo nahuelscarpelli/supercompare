@@ -326,14 +326,6 @@ const CATALOG = [
 
 const TRENDING = ["Leche", "Arroz", "Fideos", "Huevos", "Yerba", "Pan", "Queso", "Aceite"];
 
-const PROVINCES = [
-  "Buenos Aires", "CABA", "Catamarca", "Chaco", "Chubut", "Córdoba",
-  "Corrientes", "Entre Ríos", "Formosa", "Jujuy", "La Pampa", "La Rioja",
-  "Mendoza", "Misiones", "Neuquén", "Río Negro", "Salta", "San Juan",
-  "San Luis", "Santa Cruz", "Santa Fe", "Santiago del Estero",
-  "Tierra del Fuego", "Tucumán",
-];
-
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 function parseList(text) {
   return text
@@ -494,32 +486,40 @@ const css = `
   }
 
   /* ── ZONA ── */
-  .province-grid {
+  .store-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    max-height: 360px;
-    overflow-y: auto;
-    padding-right: 4px;
+    gap: 10px;
+    margin-bottom: 24px;
   }
-  .province-btn {
+  .store-toggle {
     font-family: 'DM Sans', sans-serif;
     font-size: 14px;
-    font-weight: 500;
-    padding: 12px 14px;
+    font-weight: 600;
+    padding: 14px 12px;
     border-radius: var(--radius-sm);
-    border: 1.5px solid var(--border);
+    border: 2px solid var(--border);
     background: var(--surface);
-    color: var(--text);
+    color: var(--text2);
     cursor: pointer;
     text-align: left;
     transition: all .15s;
+    display: flex;
+    align-items: center;
+    gap: 10px;
   }
-  .province-btn:hover { border-color: var(--primary); background: #F0F8F3; }
-  .province-btn.selected {
+  .store-toggle:hover { border-color: var(--primary); }
+  .store-toggle.selected {
     border-color: var(--primary);
-    background: var(--primary);
-    color: white;
+    background: #F0F8F3;
+    color: var(--primary);
+  }
+  .store-toggle-check {
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    border: 2px solid currentColor;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; flex-shrink: 0;
   }
 
   /* ── LISTA ── */
@@ -1063,26 +1063,52 @@ function TopBar({ step }) {
   );
 }
 
-// ── Step 1: Zona ──────────────────────────────────────────────────────────────
+// ── Step 1: Selección de súpers ───────────────────────────────────────────────
 function ZonaStep({ onNext }) {
-  const [selected, setSelected] = useState(null);
+  const [selected, setSelected] = useState(new Set(Object.keys(STORES)));
+
+  const toggle = (key) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  const keys = [...selected];
+
   return (
     <div className="screen">
-      <h1 className="screen-title">¿Desde dónde comprás?</h1>
-      <p className="screen-sub">Seleccioná tu provincia para ver los supermercados disponibles en tu zona.</p>
-      <div className="province-grid" style={{ marginBottom: 24 }}>
-        {PROVINCES.map(p => (
-          <button
-            key={p}
-            className={`province-btn ${selected === p ? "selected" : ""}`}
-            onClick={() => setSelected(p)}
-          >
-            {selected === p ? "✓ " : ""}{p}
-          </button>
-        ))}
+      <h1 className="screen-title">¿En qué súpers comprás?</h1>
+      <p className="screen-sub">Seleccioná los supermercados online disponibles en tu zona.</p>
+
+      <div className="store-grid">
+        {Object.entries(STORES).map(([key, s]) => {
+          const on = selected.has(key);
+          return (
+            <button
+              key={key}
+              className={`store-toggle ${on ? "selected" : ""}`}
+              onClick={() => toggle(key)}
+            >
+              <div className="store-toggle-check">{on ? "✓" : ""}</div>
+              <div>
+                <div style={{ fontSize: 18, marginBottom: 2 }}>{s.logo}</div>
+                <div>{s.name}</div>
+              </div>
+            </button>
+          );
+        })}
       </div>
-      <button className="btn-primary" disabled={!selected} onClick={() => onNext(selected)}>
-        {selected ? `Continuar con ${selected} →` : "Seleccioná tu provincia"}
+
+      <button
+        className="btn-primary"
+        disabled={keys.length === 0}
+        onClick={() => onNext(null, keys)}
+      >
+        {keys.length === 0
+          ? "Seleccioná al menos un súper"
+          : `Comparar en ${keys.length} súper${keys.length > 1 ? "es" : ""} →`}
       </button>
     </div>
   );
@@ -1142,9 +1168,8 @@ function ListaStep({ onNext, onBack }) {
 }
 
 // ── ProductCard: brand × store grid ──────────────────────────────────────────
-function ProductCard({ product, selection, onSelect, onRemove }) {
+function ProductCard({ product, storeKeys, selection, onSelect, onRemove }) {
   // selection: { brandIdx, store, price } | null
-  const storeKeys = Object.keys(STORES);
 
   // Find global cheapest cell
   let globalMin = Infinity;
@@ -1332,9 +1357,9 @@ function ResultadosStep({ listText, storeKeys, onNext, onBack }) {
         </h2>
         <p style={{ color: "var(--text2)", fontSize: 14 }}>Comparando {lines.length} producto{lines.length !== 1 ? "s" : ""} en tiempo real</p>
         <div style={{ display: "flex", justifyContent: "center", gap: 6, marginTop: 24, flexWrap: "wrap" }}>
-          {Object.entries(STORES).map(([k, s]) => (
-            <div key={k} style={{ padding: "6px 12px", borderRadius: 20, background: s.bg, fontSize: 13, fontWeight: 600, color: s.color }}>
-              {s.logo} {s.name}
+          {storeKeys.map(k => (
+            <div key={k} style={{ padding: "6px 12px", borderRadius: 20, background: STORES[k].bg, fontSize: 13, fontWeight: 600, color: STORES[k].color }}>
+              {STORES[k].logo} {STORES[k].name}
             </div>
           ))}
         </div>
